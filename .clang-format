@@ -1,0 +1,6 @@
+# Generated from CLion C/C++ Code Style settings
+BasedOnStyle: Google
+AlignConsecutiveAssignments: Consecutive
+ColumnLimit: 100
+IncludeBlocks: Preserve
+IndentWidth: 2

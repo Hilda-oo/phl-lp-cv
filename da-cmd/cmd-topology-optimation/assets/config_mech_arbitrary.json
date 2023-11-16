@@ -1,0 +1,44 @@
+{
+	"material": [
+		2e4,
+		0.3
+	],
+	"topology": {
+		"max_loop": 50,
+		"volfrac": 0.5,
+		"penal": 1.0,
+		"r_min": 1.5
+	},
+	"model": {
+		"relativeLengthOfVoxel": 0.08,
+		"arbitraryModel": "arbitrary_model.stl",
+		"chosenModel": "chosen_model.stl",
+		"visualObjModel": "1__sf.obj"
+	},
+	"absDBC": [
+		{
+			"min": [-210.0, -10.0,-16.0],
+			"max": [-189.95, 10.0, 16.0],
+			"dir": [1, 1, 1]
+		},
+		{
+			"min": [71, 47, -16],
+			"max": [92, 68, 16],
+			"dir": [1, 1, 1]
+		}
+	],
+	"absNBC": [
+		{
+			"min": [-106, 14, -15],
+			"max": [-94, 26, 15],
+			"val": [100.0, 300.0, 50.0]
+		},
+		{
+			"min": [-23, -23, -24],
+			"max": [23, 23, 24],
+			"val": [100, 0, 50]
+		}
+
+
+	]
+}

@@ -1,0 +1,4 @@
+class PROJECT_CONFIG:
+    executable_dir_path = "@EXECUTABLE_DIR_PATH@"
+    library_dir_path = "@LIBRARY_DIR_PATH@"
+    workplace_dir_path = "@WORKPLACE_DIR_PATH@"

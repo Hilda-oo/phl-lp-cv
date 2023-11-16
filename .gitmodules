@@ -1,0 +1,3 @@
+[submodule "3rd"]
+	path = 3rd
+	url = ssh://git@118.195.195.192:10022/GeometryMain/designauto-3rd.git

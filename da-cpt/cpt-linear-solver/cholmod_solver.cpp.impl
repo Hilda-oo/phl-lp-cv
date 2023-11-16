@@ -1,0 +1,179 @@
+#pragma once
+
+#include <iostream>
+#include "cholmod_solver.h"
+
+namespace da {
+namespace cpt {
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::CHOLMODSolver() {
+  cholmod_start(&cm_);
+  A_    = NULL;
+  L_    = NULL;
+  b_    = NULL;
+  x_cd_ = y_cd_ = NULL;
+
+  Ai_ = Ap_ = Ax_ = NULL;
+  bx_             = NULL;
+  solutionx_ = x_cdx_ = y_cdx_ = NULL;
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::~CHOLMODSolver() {
+  if (A_) {
+    A_->i = Ai_;
+    A_->p = Ap_;
+    A_->x = Ax_;
+    cholmod_free_sparse(&A_, &cm_);
+  }
+
+  cholmod_free_factor(&L_, &cm_);
+
+  if (b_) {
+    b_->x = bx_;
+    cholmod_free_dense(&b_, &cm_);
+  }
+
+  if (x_cd_) {
+    x_cd_->x = x_cdx_;
+    cholmod_free_dense(&x_cd_, &cm_);
+  }
+
+  if (y_cd_) {
+    y_cd_->x = y_cdx_;
+    cholmod_free_dense(&y_cd_, &cm_);
+  }
+
+  cholmod_finish(&cm_);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const std::vector<std::set<int>>& vNeighbor) {
+  Base::SetPattern(vNeighbor);
+
+  // TODO: directly save into A
+  if (!A_) {
+    A_ = cholmod_allocate_sparse(Base::num_rows_, Base::num_rows_, Base::ja_.size(), true, true, -1,
+                                 CHOLMOD_REAL, &cm_);
+    Ax_ = A_->x;
+    Ap_ = A_->p;
+    Ai_ = A_->i;
+    // -1: upper right part will be ignored during computation
+  }
+  Base::ia_.array() -= 1;
+  Base::ja_.array() -= 1;  // CHOLMOD's index starts from 0
+  A_->i = Base::ja_.data();
+  A_->p = Base::ia_.data();
+  A_->x = Base::a_.data();
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const Eigen::SparseMatrix<double>& mtr) {
+  Base::SetPattern(mtr);
+
+  if (!A_) {
+    A_  = cholmod_allocate_sparse(Base::num_rows_, Base::num_rows_, mtr.nonZeros(), true, true, -1,
+                                  CHOLMOD_REAL, &cm_);
+    Ax_ = A_->x;
+    Ap_ = A_->p;
+    Ai_ = A_->i;
+    // -1: upper right part will be ignored during computation
+
+    A_->i = Base::ja_.data();
+    A_->p = Base::ia_.data();
+    A_->x = Base::a_.data();
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::Load(const char* filePath,
+                                                              Eigen::VectorXd& rhs) {
+  Base::Load(filePath, rhs);
+
+  // TODO: directly save into A
+  if (!A_) {
+    A_ = cholmod_allocate_sparse(Base::num_rows_, Base::num_rows_, Base::ja_.size(), true, true, -1,
+                                 CHOLMOD_REAL, &cm_);
+    Ax_ = A_->x;
+    Ap_ = A_->p;
+    Ai_ = A_->i;
+    // -1: upper right part will be ignored during computation
+  }
+  Base::ia_.array() -= 1;
+  Base::ja_.array() -= 1;  // CHOLMOD's index starts from 0
+  A_->i = Base::ja_.data();
+  A_->p = Base::ia_.data();
+  A_->x = Base::a_.data();
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::AnalyzePattern(void) {
+  // std::cout << getCurrentRSS() << std::endl;
+  cholmod_free_factor(&L_, &cm_);
+  L_ = cholmod_analyze(A_, &cm_);
+}
+
+template <typename vectorTypeI, typename vectorTypeS, int Dimension>
+bool CHOLMODSolver<vectorTypeI, vectorTypeS, Dimension>::Factorize(void) {
+  cholmod_factorize(A_, L_, &cm_);
+  // std::cout << getCurrentRSS() << std::endl;
+  // exit(0);
+  return cm_.status != CHOLMOD_NOT_POSDEF;
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::Solve(Eigen::VectorXd& rhs,
+                                                               Eigen::VectorXd& result) {
+  // TODO: directly point to rhs?
+  if (!b_) {
+    b_  = cholmod_allocate_dense(Base::num_rows_, 1, Base::num_rows_, CHOLMOD_REAL, &cm_);
+    bx_ = b_->x;
+  }
+  b_->x = rhs.data();
+  cholmod_dense* x;
+  x = cholmod_solve(CHOLMOD_A, L_, b_, &cm_);
+  result.conservativeResize(rhs.size());
+  memcpy(result.data(), x->x, result.size() * sizeof(result[0]));
+  cholmod_free_dense(&x, &cm_);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::Multiply(const Eigen::VectorXd& x,
+                                                                  Eigen::VectorXd& Ax) {
+  assert(x.size() == Base::num_rows_);
+
+  if (!x_cd_) {
+    x_cd_  = cholmod_allocate_dense(Base::num_rows_, 1, Base::num_rows_, CHOLMOD_REAL, &cm_);
+    x_cdx_ = x_cd_->x;
+  }
+  x_cd_->x = (void*)x.data();
+
+  Ax.conservativeResize(Base::num_rows_);
+  if (!y_cd_) {
+    y_cd_  = cholmod_allocate_dense(Base::num_rows_, 1, Base::num_rows_, CHOLMOD_REAL, &cm_);
+    y_cdx_ = y_cd_->x;
+  }
+  y_cd_->x = (void*)Ax.data();
+
+  double alpha[2] = {1.0, 1.0}, beta[2] = {0.0, 0.0};
+
+  cholmod_sdmult(A_, 0, alpha, beta, x_cd_, y_cd_, &cm_);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void CHOLMODSolver<VectorTypeI, VectorTypeS, Dimension>::OutputFactorization(
+    const std::string& filePath) {
+  cholmod_sparse* spm = cholmod_factor_to_sparse(L_, &cm_);
+
+  FILE* out = fopen(filePath.c_str(), "w");
+  assert(out);
+
+  cholmod_write_sparse(out, spm, NULL, "", &cm_);
+
+  fclose(out);
+}
+
+template class CHOLMODSolver<Eigen::VectorXi, Eigen::VectorXd, 3>;
+}  // namespace cpt
+}  // namespace da

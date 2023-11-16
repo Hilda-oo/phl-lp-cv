@@ -1,0 +1,114 @@
+#pragma once
+
+#include "eigen_solver.h"
+
+namespace da {
+namespace cpt {
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const std::vector<std::set<int>>& vNeighbor) {
+  Base::SetPattern(vNeighbor);
+
+  // TODO: directly save into mtr
+  mat_coeff_.resize(Base::num_rows_, Base::num_rows_);
+  mat_coeff_.reserve(Base::ja_.size());
+  Base::ia_.array() -= 1.0;
+  Base::ja_.array() -= 1.0;
+  memcpy(mat_coeff_.innerIndexPtr(), Base::ja_.data(), Base::ja_.size() * sizeof(Base::ja_[0]));
+  memcpy(mat_coeff_.outerIndexPtr(), Base::ia_.data(), Base::ia_.size() * sizeof(Base::ia_[0]));
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const Eigen::SparseMatrix<double>& mtr)  // NOTE: mtr must be SPD
+{
+  Base::num_rows_ = static_cast<int>(mtr.rows());
+  mat_coeff_      = mtr;
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::AnalyzePattern(void) {
+  simplicial_LDLT_.analyzePattern(mat_coeff_);
+  assert(simplicial_LDLT_.info() == Eigen::Success);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+bool EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::Factorize(void) {
+  bool succeeded = false;
+  simplicial_LDLT_.factorize(mat_coeff_);
+  succeeded = (simplicial_LDLT_.info() == Eigen::Success);
+  assert(succeeded);
+  return succeeded;
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::Solve(Eigen::VectorXd& rhs,
+                                                                Eigen::VectorXd& result) {
+  result = simplicial_LDLT_.solve(rhs);
+  assert(simplicial_LDLT_.info() == Eigen::Success);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+double EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::CoeffMtr(int rowI, int colI) const {
+  return Base::CoeffMtr(rowI, colI);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetZero(void) {
+  // TODO: directly manipulate valuePtr without a
+  Base::SetZero();
+  memcpy(mat_coeff_.valuePtr(), Base::a_.data(), Base::a_.size() * sizeof(Base::a_[0]));
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetCoeff(int rowI, int colI, double val) {
+  // TODO: directly manipulate valuePtr without a
+
+  if (rowI <= colI) {
+    assert(rowI < Base::IJ2aI_.size());
+    const auto finder = Base::IJ2aI_[rowI].find(colI);
+    assert(finder != Base::IJ2aI_[rowI].end());
+    Base::a_[finder->second]              = val;
+    mat_coeff_.valuePtr()[finder->second] = val;
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::AddCoeff(int rowI, int colI, double val) {
+  // TODO: directly manipulate valuePtr without a
+
+  if (rowI <= colI) {
+    assert(rowI < Base::IJ2aI_.size());
+    const auto finder = Base::IJ2aI_[rowI].find(colI);
+    assert(finder != Base::IJ2aI_[rowI].end());
+    Base::a_[finder->second] += val;
+    mat_coeff_.valuePtr()[finder->second] += val;
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitRow(int rowI) {
+  for (const auto& colIter : Base::IJ2aI_[rowI]) {
+    mat_coeff_.valuePtr()[colIter.second] = (colIter.first == rowI);
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void EigenLibSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitCol(int colI,
+                                                                     const std::set<int>& rowVIs) {
+  for (const auto& rowVI : rowVIs) {
+    for (int dimI = 0; dimI < Dimension; ++dimI) {
+      int rowI = rowVI * Dimension + dimI;
+      if (rowI <= colI) {
+        const auto finder = Base::IJ2aI_[rowI].find(colI);
+        if (finder != Base::IJ2aI_[rowI].end()) {
+          mat_coeff_.valuePtr()[finder->second] = (rowI == colI);
+        }
+      }
+    }
+  }
+}
+
+template class EigenLibSolver<Eigen::VectorXi, Eigen::VectorXd, 3>;
+
+}  // namespace cpt
+}  // namespace da

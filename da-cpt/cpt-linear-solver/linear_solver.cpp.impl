@@ -1,0 +1,429 @@
+#pragma once
+
+#include "linear_solver.h"
+
+#include <set>
+#include <vector>
+
+#ifdef USE_TBB
+#include <tbb/tbb.h>
+#endif
+
+namespace da {
+namespace cpt {
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const std::vector<std::set<int>>& vNeighbor) {
+  num_rows_ = static_cast<int>(vNeighbor.size()) * Dimension;
+  ia_.resize(num_rows_ + 1);
+  ia_[0] = 1;        // 1 + nnz above row i
+  ja_.resize(0);     // colI of each element
+  IJ2aI_.resize(0);  // map from matrix index to ja index
+  IJ2aI_.resize(num_rows_);
+
+  std::vector<Eigen::VectorXi> ja_v(vNeighbor.size());
+  std::vector<int> rowNNZ(num_rows_);
+#ifdef USE_TBB
+  tbb::parallel_for(0, (int)vNeighbor.size(), 1,
+                    [&](int vI)
+#else
+  for (int vI = 0; vI < vNeighbor.size(); ++vI)
+#endif
+                    {
+                      ja_v[vI].resize((vNeighbor[vI].size() + 1) * Dimension);
+
+                      ja_v[vI][0]                      = vI * Dimension;
+                      ja_v[vI][1]                      = ja_v[vI][0] + 1;
+                      IJ2aI_[ja_v[vI][0]][ja_v[vI][0]] = 0;
+                      IJ2aI_[ja_v[vI][0]][ja_v[vI][1]] = 1;
+                      if constexpr (Dimension == 3) {
+                        ja_v[vI][2]                      = ja_v[vI][0] + 2;
+                        IJ2aI_[ja_v[vI][0]][ja_v[vI][2]] = 2;
+                      }
+
+                      int nnz = Dimension;
+                      for (const auto& nbVI : vNeighbor[vI]) {
+                        if (nbVI > vI) {
+                          ja_v[vI][nnz]                          = nbVI * Dimension;
+                          ja_v[vI][nnz + 1]                      = ja_v[vI][nnz] + 1;
+                          IJ2aI_[ja_v[vI][0]][ja_v[vI][nnz]]     = nnz;
+                          IJ2aI_[ja_v[vI][0]][ja_v[vI][nnz + 1]] = nnz + 1;
+                          if constexpr (Dimension == 3) {
+                            ja_v[vI][nnz + 2]                      = ja_v[vI][nnz] + 2;
+                            IJ2aI_[ja_v[vI][0]][ja_v[vI][nnz + 2]] = nnz + 2;
+                          }
+                          nnz += Dimension;
+                        }
+                      }
+
+                      rowNNZ[ja_v[vI][0]] = nnz;
+                      if constexpr (Dimension == 2) {
+                        ja_v[vI].conservativeResize(nnz * Dimension - 1);
+                        ja_v[vI].tail(nnz - 1) = ja_v[vI].segment(1, nnz - 1);
+
+                        IJ2aI_[ja_v[vI][0] + 1] = IJ2aI_[ja_v[vI][0]];
+                        IJ2aI_[ja_v[vI][0] + 1].erase(ja_v[vI][0]);
+
+                        rowNNZ[ja_v[vI][0] + 1] = nnz - 1;
+                      } else {
+                        ja_v[vI].conservativeResize(nnz * Dimension - 3);
+                        ja_v[vI].segment(nnz, nnz - 1) = ja_v[vI].segment(1, nnz - 1);
+                        ja_v[vI].tail(nnz - 2)         = ja_v[vI].segment(2, nnz - 2);
+
+                        IJ2aI_[ja_v[vI][0] + 1] = IJ2aI_[ja_v[vI][0]];
+                        IJ2aI_[ja_v[vI][0] + 1].erase(ja_v[vI][0]);
+                        IJ2aI_[ja_v[vI][0] + 2] = IJ2aI_[ja_v[vI][0] + 1];
+                        IJ2aI_[ja_v[vI][0] + 2].erase(ja_v[vI][0] + 1);
+
+                        rowNNZ[ja_v[vI][0] + 1] = nnz - 1;
+                        rowNNZ[ja_v[vI][0] + 2] = nnz - 2;
+                      }
+                    }
+#ifdef USE_TBB
+  );
+#endif
+
+  for (int rowI = 0; rowI < num_rows_; ++rowI) {
+    ia_[rowI + 1] = ia_[rowI] + rowNNZ[rowI];
+  }
+
+  ja_.resize(ia_[num_rows_] - 1);
+#ifdef USE_TBB
+  tbb::parallel_for(0, (int)vNeighbor.size(), 1,
+                    [&](int vI)
+#else
+  for (int vI = 0; vI < vNeighbor.size(); ++vI)
+#endif
+                    {
+                      int rowIStart = vI * Dimension;
+
+                      ja_.segment(ia_[rowIStart] - 1, ja_v[vI].size()) = ja_v[vI];
+
+                      for (auto& indexI : IJ2aI_[rowIStart]) {
+                        indexI.second += ia_[rowIStart] - 1;
+                      }
+                      for (auto& indexI : IJ2aI_[rowIStart + 1]) {
+                        indexI.second += ia_[rowIStart + 1] - 2;
+                      }
+                      if constexpr (Dimension == 3) {
+                        for (auto& indexI : IJ2aI_[rowIStart + 2]) {
+                          indexI.second += ia_[rowIStart + 2] - 3;
+                        }
+                      }
+                    }
+#ifdef USE_TBB
+  );
+#endif
+  ja_.array() += 1;
+  a_.resize(ja_.size());
+
+  // NOTE: fixed verts nnz entries are not eliminated
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::Load(const char* filePath,
+                                                             Eigen::VectorXd& rhs) {
+  FILE* in = fopen(filePath, "rb");
+  assert(in);
+
+  size_t vecSize;
+  fread(&vecSize, sizeof(size_t), 1, in);
+  std::cout << "ia size " << vecSize << std::endl;
+  ia_.resize(vecSize);
+  fread(ia_.data(), sizeof(ia_[0]), vecSize, in);
+
+  fread(&vecSize, sizeof(size_t), 1, in);
+  std::cout << "ja size " << vecSize << std::endl;
+  ja_.resize(vecSize);
+  fread(ja_.data(), sizeof(ja_[0]), vecSize, in);
+
+  if (ia_[0] == 0) {
+    ia_.array() += 1;
+    ja_.array() += 1;
+  }
+
+  fread(&vecSize, sizeof(size_t), 1, in);
+  std::cout << "a size " << vecSize << std::endl;
+  a_.resize(vecSize);
+  fread(a_.data(), sizeof(a_[0]), vecSize, in);
+
+  fread(&vecSize, sizeof(size_t), 1, in);
+  std::cout << "rhs size " << vecSize << std::endl;
+  rhs.resize(vecSize);
+  fread(rhs.data(), sizeof(rhs[0]), vecSize, in);
+
+  num_rows_ = vecSize;
+
+  fclose(in);
+  std::cout << "load done" << std::endl;
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::Write(const char* filePath,
+                                                              const Eigen::VectorXd& rhs) {
+  FILE* out = fopen(filePath, "wb");
+
+  size_t vecSize = ia_.size();
+  fwrite(&vecSize, sizeof(vecSize), 1, out);
+  fwrite(ia_.data(), sizeof(ia_[0]), ia_.size(), out);
+
+  vecSize = ja_.size();
+  fwrite(&vecSize, sizeof(vecSize), 1, out);
+  fwrite(ja_.data(), sizeof(ja_[0]), ja_.size(), out);
+
+  vecSize = a_.size();
+  fwrite(&vecSize, sizeof(vecSize), 1, out);
+  fwrite(a_.data(), sizeof(a_[0]), a_.size(), out);
+
+  vecSize = rhs.size();
+  fwrite(&vecSize, sizeof(vecSize), 1, out);
+  fwrite(rhs.data(), sizeof(rhs[0]), rhs.size(), out);
+
+  fclose(out);
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetPattern(
+    const Eigen::SparseMatrix<double>& mtr) {
+  // NOTE: mtr must be SPD
+
+  num_rows_ = static_cast<int>(mtr.rows());
+
+  ja_.conservativeResize(mtr.nonZeros());
+  memcpy(ja_.data(), mtr.innerIndexPtr(), mtr.nonZeros() * sizeof(mtr.innerIndexPtr()[0]));
+
+  ia_.conservativeResize(num_rows_ + 1);
+  memcpy(ia_.data(), mtr.outerIndexPtr(), (num_rows_ + 1) * sizeof(mtr.outerIndexPtr()[0]));
+
+  a_.conservativeResize(mtr.nonZeros());
+  memcpy(a_.data(), mtr.valuePtr(), mtr.nonZeros() * sizeof(mtr.valuePtr()[0]));
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::Multiply(const Eigen::VectorXd& x,
+                                                                 Eigen::VectorXd& Ax) {
+  assert(x.size() == num_rows_);
+  assert(IJ2aI_.size() == num_rows_);
+
+  Ax.setZero(num_rows_);
+  for (int rowI = 0; rowI < num_rows_; ++rowI) {
+    for (const auto& colI : IJ2aI_[rowI]) {
+      Ax[rowI] += a_[colI.second] * x[colI.first];
+      if (rowI != colI.first) {
+        Ax[colI.first] += a_[colI.second] * x[rowI];
+      }
+    }
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::OutputFactorization(
+    const std::string& filePath) {
+  assert(0 && "please implement!");
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+double LinearSolver<VectorTypeI, VectorTypeS, Dimension>::CoeffMtr(int rowI, int colI) const {
+  if (rowI > colI) {
+    // return only upper right part for symmetric matrix
+    int temp = rowI;
+    rowI     = colI;
+    colI     = temp;
+  }
+  assert(rowI < IJ2aI_.size());
+  const auto finder = IJ2aI_[rowI].find(colI);
+  if (finder != IJ2aI_[rowI].end()) {
+    return a_[finder->second];
+  } else {
+    return 0.0;
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::GetCoeffMtr(
+    Eigen::SparseMatrix<double>& mtr) const {
+  mtr.resize(num_rows_, num_rows_);
+  mtr.setZero();
+  mtr.reserve(a_.size() * 2 - num_rows_);
+  for (int rowI = 0; rowI < num_rows_; rowI++) {
+    for (const auto& colIter : IJ2aI_[rowI]) {
+      mtr.insert(rowI, colIter.first) = a_[colIter.second];
+      if (rowI != colIter.first) {
+        mtr.insert(colIter.first, rowI) = a_[colIter.second];
+      }
+    }
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::GetCoeffMtr_lower(
+    Eigen::SparseMatrix<double>& mtr) const {
+  assert(num_rows_ > 0);
+
+  mtr.conservativeResize(num_rows_, num_rows_);
+  mtr.reserve(a_.size());
+
+  memcpy(mtr.innerIndexPtr(), ja_.data(), ja_.size() * sizeof(ja_[0]));
+  memcpy(mtr.outerIndexPtr(), ia_.data(), ia_.size() * sizeof(ia_[0]));
+  memcpy(mtr.valuePtr(), a_.data(), a_.size() * sizeof(a_[0]));
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::GetTriplets(
+    const Eigen::VectorXi& nodeList, std::vector<Eigen::Triplet<double>>& triplet) const {
+  std::map<int, int> rowIMapper;
+  for (int i = 0; i < nodeList.size(); ++i) {
+    int startI    = i * Dimension;
+    int startRowI = nodeList[i] * Dimension;
+
+    rowIMapper[startRowI]     = startI;
+    rowIMapper[startRowI + 1] = startI + 1;
+    if constexpr (Dimension == 3) {
+      rowIMapper[startRowI + 2] = startI + 2;
+    }
+  }
+
+  triplet.resize(0);
+  for (int rowI = 0; rowI < num_rows_; rowI++) {
+    auto rowIFinder = rowIMapper.find(rowI);
+    for (const auto& colIter : IJ2aI_[rowI]) {
+      auto colIFinder = rowIMapper.find(colIter.first);
+      if (rowIFinder != rowIMapper.end() && colIFinder != rowIMapper.end()) {
+        triplet.emplace_back(rowIFinder->second, colIFinder->second, a_[colIter.second]);
+        if (rowIFinder->second != colIFinder->second) {
+          triplet.emplace_back(colIFinder->second, rowIFinder->second, a_[colIter.second]);
+        }
+      }
+    }
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetCoeff(int rowI, int colI, double val) {
+  if (rowI <= colI) {
+    assert(rowI < IJ2aI_.size());
+    const auto finder = IJ2aI_[rowI].find(colI);
+    assert(finder != IJ2aI_[rowI].end());
+    a_[finder->second] = val;
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetCoeff(
+    const LinearSolver<VectorTypeI, VectorTypeS, Dimension>* other, double multiplier) {
+  assert(num_rows_ == other->num_rows_);
+  assert(ja_.size() == other->a_.size());
+
+  a_ = multiplier * other->a_;
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetZero(void) {
+  a_.setZero();
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitRow(int rowI) {
+  assert(num_rows_ == IJ2aI_.size());
+  assert(rowI < num_rows_);
+  for (const auto& colIter : IJ2aI_[rowI]) {
+    a_[colIter.second] = (colIter.first == rowI);
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitRow(
+    int rowI, std::unordered_map<int, double>& rowVec) {
+  assert(num_rows_ == IJ2aI_.size());
+  assert(rowI < num_rows_);
+  rowVec.clear();
+  for (const auto& colIter : IJ2aI_[rowI]) {
+    rowVec[colIter.first] = a_[colIter.second];
+    a_[colIter.second]    = (colIter.first == rowI);
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetZeroCol(int colI) {
+  assert(colI < num_rows_);
+  for (int rowI = 0; rowI < num_rows_; ++rowI) {
+    const auto finder = IJ2aI_[rowI].find(colI);
+    if (finder != IJ2aI_[rowI].end()) {
+      a_[finder->second] = 0.0;
+    }
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitCol(int colI,
+                                                                   const std::set<int>& rowVIs) {
+  assert(num_rows_ == IJ2aI_.size());
+  assert(colI < num_rows_);
+  for (const auto& rowVI : rowVIs) {
+    for (int dimI = 0; dimI < Dimension; ++dimI) {
+      int rowI = rowVI * Dimension + dimI;
+      assert(rowI < num_rows_);
+      if (rowI <= colI) {
+        const auto finder = IJ2aI_[rowI].find(colI);
+        if (finder != IJ2aI_[rowI].end()) {
+          a_[finder->second] = (rowI == colI);
+        }
+      }
+    }
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::SetUnitColDim1(
+    int colI, const std::set<int>& rowVIs) {
+  assert(num_rows_ == IJ2aI_.size());
+  assert(colI < num_rows_);
+  for (const auto& rowI : rowVIs) {
+    assert(rowI < num_rows_);
+    if (rowI <= colI) {
+      const auto finder = IJ2aI_[rowI].find(colI);
+      if (finder != IJ2aI_[rowI].end()) {
+        a_[finder->second] = (rowI == colI);
+      }
+    }
+  }
+}
+
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::AddCoeff(int rowI, int colI, double val) {
+  if (rowI <= colI) {
+    assert(rowI < IJ2aI_.size());
+    const auto finder = IJ2aI_[rowI].find(colI);
+    assert(finder != IJ2aI_[rowI].end());
+    a_[finder->second] += val;
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::PreconditionDiag(
+    const Eigen::VectorXd& input, Eigen::VectorXd& output) {
+  assert(num_rows_ == input.size());
+  output.resize(num_rows_);
+  for (int rowI = 0; rowI < num_rows_; ++rowI) {
+    const auto finder = IJ2aI_[rowI].find(rowI);
+    assert(finder != IJ2aI_[rowI].end());
+    output[rowI] = input[rowI] / a_[finder->second];
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::GetMaxDiag(double& maxDiag) {
+  maxDiag = -std::numeric_limits<double>::infinity();
+  for (int rowI = 0; rowI < num_rows_; ++rowI) {
+    const auto finder = IJ2aI_[rowI].find(rowI);
+    assert(finder != IJ2aI_[rowI].end());
+    if (maxDiag < a_[finder->second]) {
+      maxDiag = a_[finder->second];
+    }
+  }
+}
+template <typename VectorTypeI, typename VectorTypeS, int Dimension>
+void LinearSolver<VectorTypeI, VectorTypeS, Dimension>::AddCoeff(
+    const LinearSolver<VectorTypeI, VectorTypeS, Dimension>* other, double multiplier) {
+  assert(num_rows_ == other->num_rows_);
+  if (a_.size() == other->a_.size()) {
+    a_ += multiplier * other->a_;
+  } else {
+    for (int rowI = 0; rowI < num_rows_; ++rowI) {
+      for (const auto& colIter : other->IJ2aI_[rowI]) {
+        const auto finder = IJ2aI_[rowI].find(colIter.first);
+        if (finder != IJ2aI_[rowI].end()) {
+          a_[finder->second] += multiplier * other->a_[colIter.second];
+        }
+      }
+    }
+  }
+}
+}  // namespace cpt
+}  // namespace da

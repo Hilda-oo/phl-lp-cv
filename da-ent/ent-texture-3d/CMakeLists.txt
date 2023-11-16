@@ -1,0 +1,1 @@
+AddEntProject(t3d-surface-hole  sha-io-foundation  sha-surface-mesh)

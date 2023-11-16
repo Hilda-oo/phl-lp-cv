@@ -1,0 +1,30 @@
+{
+	"material": {
+		"thermal_conductivity":1.0
+	},
+
+	"topology": {
+		"max_loop": 100,
+		"volfrac": 0.5,
+		"penal": 2.0,
+		"r_min": 1.5
+	},
+	"model": {
+		"regularModel": [25,25,25],
+		"visualObjModel":""
+	},
+	"NBC": [
+		{
+			"min": [0, 0, 0],
+			"max": [1, 1, 1],
+			"val": -1
+		}
+
+	],
+	"DBC": [
+		{
+			"min": [0, 0, 0],
+			"max": [1, 1, 0]
+		}
+	]
+}

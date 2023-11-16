@@ -1,0 +1,31 @@
+{
+	"material": [
+		1.0,
+		0.3
+	],
+	"topology": {
+		"max_loop": 50,
+		"volfrac": 0.5,
+		"penal": 1.0,
+		"r_min": 1.5
+	},
+	"model": {
+		"regularModel": [100,30,30],
+		"visualObjModel":"2-box-refined.obj"
+	},
+	"NBC": [
+		{
+			"min": [1, 0, 0],
+			"max": [1, 1, 1],
+			"val": [0.0, 0.0, -1.0]
+		}
+
+	],
+	"DBC": [
+		{
+			"min": [0, 0, 0],
+			"max": [0, 1, 1],
+			"dir": [1, 1, 1]
+		}
+	]
+}

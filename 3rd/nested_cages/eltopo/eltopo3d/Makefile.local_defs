@@ -1,0 +1,38 @@
+#
+# This for use with Makefile
+#
+# NOTE: Rename this file to "Makefile.local_defs" after specifying your machine settings
+#
+
+INCLUDE_PATH = -I. -I../common -I../common/newsparse -I../common/meshes -I../common/tunicate
+
+# local machine settings
+
+# For example, on Linux on a PC this will likely work:
+
+# If Leo's Linux machine
+DEPEND = g++ -D__LITTLE_ENDIAN__ -DUSE_FORTRAN_BLAS -DNO_GUI -DGRID_100 -DEXTRA_PASSES -DREMOVE_RIZ
+CC = g++ -Wall -D__LITTLE_ENDIAN__ -DUSE_FORTRAN_BLAS -DNO_GUI -DGRID_100 -DEXTRA_PASSES -DREMOVE_RIZ -fPIC -std=c++11
+RELEASE_FLAGS = -O3 -funroll-loops
+
+# # On Mac OS X, this probably will work:
+# DEPEND = g++ -DNO_GUI -DGRID_100 -DEXTRA_PASSES -DREMOVE_RIZ
+# CC = g++ -Wall -DNO_GUI -DGRID_100 -DEXTRA_PASSES -DREMOVE_RIZ -fPIC -flax-vector-conversions -std=c++11
+# RELEASE_FLAGS = -O3 -funroll-loops 
+DEBUG_FLAGS = -g
+LINK = g++
+LINK_LIBS = -lGL -lGLU -lglut -llapack -lblas 
+
+# On Mac OS X, this probably will work:
+
+#DEPEND = g++ -DNO_GUI
+#CC = g++ -Wall -DNO_GUI -fPIC 
+#RELEASE_FLAGS = -O3 -funroll-loops
+#DEBUG_FLAGS = -g
+#LINK = g++
+#LINK_LIBS = -framework OpenGL -framework GLUT -framework vecLib 
+
+# USERNAME := $(shell whoami)
+# ifeq ($(USERNAME),ajx)
+# 				RELEASE_FLAGS +=-arch x86_64 -m64 -march=corei7 -msse4.2
+# endif

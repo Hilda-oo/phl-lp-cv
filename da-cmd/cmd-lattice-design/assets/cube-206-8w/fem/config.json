@@ -1,0 +1,19 @@
+{
+    "material": [1e5, 0.3, 1e3],
+    "mshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube/fem/cube_9743.msh",
+
+    "DBC": [
+        {
+            "min": [-0.001, -0.001, -0.001],
+            "max": [1.001, 0.001, 1.001]
+        }
+    ],
+
+    "NBC": [
+        {
+            "min": [-0.001, 0.999, -0.001],
+            "max": [1.001, 1.001, 1.001],
+            "force": [-10, 0, 0]
+        }
+    ]
+}
