@@ -27,3 +27,5 @@ target_compile_definitions(sha-topology-optimization-3d PUBLIC USE_SUITESPARSE)
 target_compile_definitions(sha-topology-optimization-3d PUBLIC DEBUG)
 # target_compile_definitions(sha-topology-optimization-3d PUBLIC WRITE_TENSOR_IN_LOOP)# for debug
 
+AddShaProject(sha-fem-thermoelastic sha-base-framework sha-io-foundation TBB::tbb sha-simulation-utils)
+

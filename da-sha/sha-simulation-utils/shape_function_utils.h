@@ -42,4 +42,7 @@ void ComputeNForTet(const Eigen::RowVector3d &P, const Eigen::Matrix<double, 4, 
 void ComputeBForTet(const Eigen::Matrix<double, 4, 3> &X, Eigen::Matrix<double, 6, 12> &B);
 void ComputeKeForTet(const Eigen::Matrix<double, 4, 3> &X, const Eigen::Matrix<double, 6, 6> &D,
                      Eigen::Matrix<double, 12, 12> &Ke, double &Vol);
+
+void ComputeHeatKeForTet(const Eigen::Matrix<double, 4, 3> &X, Eigen::Matrix<double, 4, 4> &heatKe, double &Vol);         
+void ComputeHeatBeForTet(const Eigen::Matrix<double, 4, 3> &X, Eigen::Matrix<double, 3, 4> &Be);            
 }  // namespace da::sha

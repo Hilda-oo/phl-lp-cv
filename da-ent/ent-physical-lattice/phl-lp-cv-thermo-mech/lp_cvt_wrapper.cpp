@@ -1,14 +1,8 @@
 #include "lp_cvt_wrapper.h"
-
 #include <LpCVT/algebra/F_Lp.h>
 #include <LpCVT/combinatorics/clipped_VD.h>
 #include <LpCVT/combinatorics/delaunay_CGAL.h>
 #include <LpCVT/combinatorics/mesh.h>
-#include <LpCVT/common/types.h>
-
-#include "Eigen/src/Core/Matrix.h"
-#include "LpCVT/combinatorics/delaunay.h"
-#include "sha-base-framework/frame.h"
 
 namespace da {
 static bool has_edge(const std::vector<unsigned int> &facet_vertex_index, unsigned int facet_begin,

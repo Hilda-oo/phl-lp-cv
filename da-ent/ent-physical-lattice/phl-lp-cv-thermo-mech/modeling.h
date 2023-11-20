@@ -1,11 +1,6 @@
 #pragma once
 
-#include <Eigen/Eigen>
-#include <utility>
-#include <vector>
-
 #include "sha-simulation-3d/CBN/background_mesh.h"
-#include "sha-surface-mesh/matmesh.h"
 #include "sha-voronoi-foundation/voronoi.h"
 
 namespace da {

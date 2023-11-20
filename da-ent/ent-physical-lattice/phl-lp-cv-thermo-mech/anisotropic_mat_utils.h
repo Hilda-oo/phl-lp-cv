@@ -3,37 +3,13 @@
 #include <Eigen/Eigen>
 #include <memory>
 #include <vector>
-#include "Eigen/src/Core/Matrix.h"
 #include "sha-base-framework/declarations.h"
-#include "sha-fem-quasistatic/fem_tet/simulation.h"
 
 namespace da {
 class AnisotropicMatWrapper {
  public:
   explicit AnisotropicMatWrapper();
 
- public:
-
-  /**
-   * Given query points Q, get their displacements and stress by Fem
-   * @param fem_simulator fem's operator object
-   * @param query_points (nQ, 3), query points
-   * @param field_flag 1 for stress field, 0 for displacement field
-   */
-  auto getAnisotropicMatByFem(const std::shared_ptr<sha::FEMTetQuasiSimulator> &fem_simulator,
-                              Eigen::MatrixXd &query_points, bool field_flag = 1)
-      -> std::vector<Eigen::Matrix3d>;
-
-  /**
-   * Given query points Q, get their displacements and stress by Fem,
-   * different with the above : process stress with eigenDecomposition
-   * @param fem_simulator fem's operator object
-   * @param query_points (nQ, 3), query points
-   * @param field_flag 1 for stress field, 0 for displacement field
-   */
-  auto getAnisotropicMatByFem2(const std::shared_ptr<sha::FEMTetQuasiSimulator> &fem_simulator,
-                              Eigen::MatrixXd &query_points, bool field_flag = 1)
-      -> std::vector<Eigen::Matrix3d>;
 
   /**
    * Given query points Q, get their density

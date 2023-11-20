@@ -1,15 +1,9 @@
 #include "modeling.h"
-
-#include "Eigen/src/Core/Matrix.h"
-#include "sha-base-framework/declarations.h"
-#include "utilis.h"
-
-#include <igl/signed_distance.h>
-#include "sha-io-foundation/mesh_io.h"
 #include "sha-voronoi-foundation/fast_voronoi.h"
-
-#include <igl/centroid.h>
+#include "utilis.h"
 #include <oneapi/tbb.h>
+#include <igl/centroid.h>
+#include <igl/signed_distance.h>
 
 namespace da {
 
