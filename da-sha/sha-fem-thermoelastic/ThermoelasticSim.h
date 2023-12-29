@@ -51,11 +51,10 @@ class ThermoelasticSim : public Simulation<TEDIM_> {
   void computeK();
   void solve();
   void setBC();
-  void ComputeGlobalK();
 
-  auto GetElementB(int eI) -> Eigen::MatrixXd { return eleBe_[eI]; }
-  auto GetD0() -> Eigen::Matrix<double, 6, 6> { return D_; }
-  auto GetDI(int eI) -> Eigen::Matrix<double, 6, 6> { return D_ / E_ * material_int_E_(eI); }
+  inline auto GetElementB(int eI) -> Eigen::MatrixXd { return eleBe_[eI]; }
+  inline auto GetD0() -> Eigen::Matrix<double, 6, 6> { return D_; }
+  inline auto GetDI(int eI) -> Eigen::Matrix<double, 6, 6> { return D_ / E_ * material_int_E_(eI); }
   // must be run before simulation
   void preCompute(Eigen::VectorXd p_T, double p_T_ref,
                   std::vector<Eigen::Vector<int, 4 * HEATDIM_>> p_elementId2ThermDofs);
@@ -64,7 +63,7 @@ class ThermoelasticSim : public Simulation<TEDIM_> {
   Eigen::VectorXd material_int_E_;
   Eigen::VectorXd Beta_;
 
-  void setMaterialParam(Eigen::VectorXd p_E_vec, Eigen::VectorXd p_Beta_vec) {
+  inline void setMaterialParam(Eigen::VectorXd p_E_vec, Eigen::VectorXd p_Beta_vec) {
     material_int_E_.resize(0);
     material_int_E_.resize(p_E_vec.size());
     material_int_E_ = p_E_vec;

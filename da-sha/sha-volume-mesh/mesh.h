@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <OpenVolumeMesh/Mesh/HexahedralMesh.hh>
 #include <OpenVolumeMesh/Mesh/PolyhedralMesh.hh>
 #include <OpenVolumeMesh/Mesh/TetrahedralMesh.hh>

@@ -1,11 +1,14 @@
 #include <igl/write_triangle_mesh.h>
+#include <spdlog/common.h>
+#include <algorithm>
 #include <boost/progress.hpp>
+#include <iostream>
+#include "config.h"
 #include "optimization.h"
 #include "sha-implicit-modeling/implicit.h"
 #include "sha-io-foundation/data_io.h"
 #include "sha-io-foundation/mesh_io.h"
 #include "utilis.h"
-#include "config.h"
 
 std::string WorkingDirectory();
 
@@ -49,7 +52,8 @@ class Worker {
                               const std::vector<sha::NeumannBC> &p_mechNBC,
                               const std::vector<sha::DirichletBC> &p_thermalDBC,
                               const std::vector<sha::NeumannBC> &p_thermalNBC,
-                              const std::shared_ptr<sha::CtrlPara> &p_para, double shell_thickness) {
+                              const std::shared_ptr<sha::CtrlPara> &p_para,
+                              double shell_thickness) {
     simulator_ = std::make_shared<sha::ThermoelasticWrapper>(nested_background_mesh_, p_YM, p_PR,
                                                              p_TC, p_TEC, p_mechDBC, p_mechNBC,
                                                              p_thermalDBC, p_thermalNBC, p_para);
@@ -61,7 +65,7 @@ class Worker {
   void Run(const Eigen::MatrixXd &mat_init_seeds, double init_radius,
            const std::pair<double, double> &radius_range, double scalar_E, double volfrac,
            size_t num_iterations, const fs_path &beams_out_path, const fs_path &seeds_out_path,
-           int mode) {
+           const fs_path out_path, int mode) {
     Eigen::AlignedBox3d opt_domain;
     opt_domain.min()         = simulator_->getNode().colwise().minCoeff();
     opt_domain.max()         = simulator_->getNode().colwise().maxCoeff();
@@ -88,10 +92,16 @@ class Worker {
             related_num[idx] =
                 optimizer_->GetModeling()->map_voronoi_beam_idx_to_cell_indices[idx].size();
           }
+          std::vector<double> beam_radius(optimizer_->GetModeling()->voronoi_beams_radiuses_.size());
+          std::copy_n(optimizer_->GetModeling()->voronoi_beams_radiuses_.data(), optimizer_->GetModeling()->voronoi_beams_radiuses_.size(), beam_radius.data());
           sha::WriteToVtk(beams_out_path / fmt::format("beam{}.vtk", iteration_idx),
                           optimizer_->GetModeling()->voronoi_beams_mesh_.mat_coordinates,
                           optimizer_->GetModeling()->voronoi_beams_mesh_.mat_beams, {}, related_num,
                           3);
+          sha::WriteToVtk(beams_out_path / fmt::format("beam_r{}.vtk", iteration_idx),
+                          optimizer_->GetModeling()->voronoi_beams_mesh_.mat_coordinates,
+                          optimizer_->GetModeling()->voronoi_beams_mesh_.mat_beams, {}, beam_radius,
+                          3);                          
           sha::WritePointsToVtk(seeds_out_path / fmt::format("point{}.vtk", iteration_idx),
                                 mat_variables.leftCols(3));
 
@@ -103,18 +113,20 @@ class Worker {
           //     WorkingResultDirectoryPath() / "V1" / fmt::format("V1_{}.obj", iteration_idx));
         });
 
-    sha::WriteVectorToFile(WorkingResultDirectoryPath() / "C.txt",
+    optimizer_->GetSimulation()->extractResult(out_path);
+
+    sha::WriteVectorToFile(out_path / "C.txt",
                            sha::ConvertStlVectorToEigenVector(sequential_C));
-    sha::WriteVectorToFile(WorkingResultDirectoryPath() / "V.txt",
+    sha::WriteVectorToFile(out_path / "V.txt",
                            sha::ConvertStlVectorToEigenVector(sequential_V));
-    sha::WriteVectorToFile(WorkingResultDirectoryPath() / "E.txt",
+    sha::WriteVectorToFile(out_path / "E.txt",
                            sha::ConvertStlVectorToEigenVector(sequential_E));
 
     // output optimized model in rods
-    // Eigen::Vector3i num_xyz_samples(300, 300, 300);
+    Eigen::Vector3i num_xyz_samples(140, 200, 50);
     // Eigen::Vector3i num_xyz_samples(200, 200, 200);  //for 2-box-refine
     // Eigen::Vector3i num_xyz_samples(1000, 1000, 1000);  //max num for 2-box-refine
-    Eigen::Vector3i num_xyz_samples(120, 120, 120);  // for cube
+    // Eigen::Vector3i num_xyz_samples(120, 120, 120);  // for cube
     // log::info("samples x: {}, y: {}, z: {}", num_xyz_samples.x(), num_xyz_samples.y(),
     //           num_xyz_samples.z());
     Eigen::AlignedBox3d sdf_domain_bbox = opt_domain;
@@ -123,17 +135,8 @@ class Worker {
     sha::SDFSampleDomain sdf_domain{.domain = sdf_domain_bbox, .num_samples = num_xyz_samples};
     sha::NonUniformFrameSDF sdf(optimizer_->GetModeling()->voronoi_beams_mesh_,
                                 optimizer_->GetModeling()->voronoi_beams_radiuses_, sdf_domain);
-    sha::WriteMatrixToFile(
-        WorkingResultDirectoryPath() / "processVoronoiEdge/voronoi_beams_mesh_vertex.txt",
-        optimizer_->GetModeling()->voronoi_beams_mesh_.mat_coordinates);
-    sha::WriteMatrixToFile(
-        WorkingResultDirectoryPath() / "processVoronoiEdge/voronoi_beams_mesh_beams.txt",
-        optimizer_->GetModeling()->voronoi_beams_mesh_.mat_beams);
-    sha::WriteVectorToFile(
-        WorkingResultDirectoryPath() / "processVoronoiEdge/voronoi_beams_radiuses.txt",
-        optimizer_->GetModeling()->voronoi_beams_radiuses_);
     MatMesh3 mc_mesh = sdf.GenerateMeshByMarchingCubes(0.0);
-    igl::write_triangle_mesh((WorkingResultDirectoryPath() / "resulted_rods.obj").string(),
+    igl::write_triangle_mesh((out_path / "resulted_rods.obj").string(),
                              mc_mesh.mat_coordinates, mc_mesh.mat_faces);
     log::info("end generation of rod");
   }
@@ -148,12 +151,6 @@ class Worker {
   std::shared_ptr<da::AnisotropicMatWrapper> anisotropic_mat_wrapper_;
 
  private:
-  double YM1        = 1.0e5;
-  double YM0        = 1.0e-5;
-  double PR         = 0.3;
-  double penaltyYM  = 1;
-  double penaltyDBC = 1e10;
-
   int p_;
 
   size_t num_seeds_;
@@ -164,13 +161,11 @@ class Worker {
 void GeneratePhysicalLpNormVoronoiLatticeStructure(int mode) {
   using namespace da;  // NOLINT
   fs_path base_path = WorkingDirectory();
-  auto config_path  = base_path / "config.json";
+  auto config_path  = base_path / "da-ent/ent-physical-lattice/phl-lp-cv-thermo-mech/config.json";
 
   // int mode = 1; // 0 for iso, 1 for fem, 2 for top density, 3 for top stress
 
   const int p = 6;
-
-  log::info("Algo is working on path '{}'", base_path.string());
 
   // ------------- Read Config ---------------
   // load config from json file
@@ -179,18 +174,24 @@ void GeneratePhysicalLpNormVoronoiLatticeStructure(int mode) {
     spdlog::error("error on reading json file!");
     exit(-1);
   }
-  fs_path output_path                  = config.outputPath;
+
+  std::string condition = config.condition;
+  log::info("Algo is working on path '{}' and example '{}'", base_path.string(), condition);
+
+  std::string level = config.level;
+  spdlog::set_level(spdlog::level::from_str(level));
+
+  auto output_path                     = config.outputPath;
   auto mesh_path                       = config.meshFilePath;
   auto seeds_path                      = config.seedsPath;
   auto background_cells_path           = config.backgroundCellsPath;
   auto background_cell_tets_path       = config.cellTetsPath;
   auto background_cell_polyhedron_path = config.cellPolyhedronPath;
 
-  auto beams_out_path = output_path / "beams";
-  auto seeds_out_path = output_path / "points";
-  config.backUpConfig(output_path.string());
+  auto beams_out_path = output_path + "/beams";
+  auto seeds_out_path = output_path + "/points";
+  config.backUpConfig(output_path);
 
-  std::string condition               = config.condition;
   std::shared_ptr<sha::CtrlPara> para = config.para;
 
   size_t num_iterations = para->max_loop;
@@ -232,5 +233,5 @@ void GeneratePhysicalLpNormVoronoiLatticeStructure(int mode) {
 
   log::info("Optimizing");
   woker.Run(mat_seeds, init_radius, radius_range, scalar_E, volfrac, num_iterations, beams_out_path,
-            seeds_out_path, mode);
+            seeds_out_path, output_path, mode);
 }

@@ -5,6 +5,7 @@
 #include <vector>
 #include "sha-base-framework/frame.h"
 #include "sha-simulation-utils/boundary_conditions.h"
+#include "unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h"
 
 namespace da::sha {
 
@@ -62,23 +63,41 @@ class Simulation {
   auto GetElementK(int eI) -> Eigen::MatrixXd { return eleKe_[eI]; }
   auto GetV() -> Eigen::VectorXd { return vol_; }
 
-  void ComputeGlobalK() {
-    K_ = Eigen::MatrixXd::Zero(nDof_, nDof_);
+  void computeGlobalK() {
+    Eigen::MatrixXi mat_ele2dofs = GetMapEleId2DofsMat();
+    int dofs_each_ele            = Get_DOFS_EACH_ELE();  // 12 for mathe; 4 for heat
+    iK_.resize(0);
+    iK_ = Eigen::KroneckerProduct(mat_ele2dofs, Eigen::VectorXi::Ones(dofs_each_ele))
+              .transpose()
+              .reshaped();
+    jK_.resize(0);
+    jK_ = Eigen::KroneckerProduct(mat_ele2dofs, Eigen::RowVectorXi::Ones(dofs_each_ele))
+              .transpose()
+              .reshaped();
+    Eigen::MatrixXd K = Eigen::MatrixXd::Zero(eleDofNum_ * eleDofNum_, nEle_);
     for (int eI = 0; eI < nEle_; ++eI) {
-      auto ele_id_dof = eDof_[eI];
-      K_(ele_id_dof, ele_id_dof) += eleKe_[eI];
+      K.col(eI) = eleKe_[eI].reshaped();
     }
+    Eigen::VectorXd K_val = K.reshaped();
+    std::vector<Eigen::Triplet<double>> triplet;
+    triplet.resize(0);
+    for (int i = 0; i < iK_.size(); i++) {
+      triplet.push_back({iK_(i), jK_(i), K_val(i)});
+    }
+    K_spMat_.resize(nDof_, nDof_);
+    K_spMat_.setFromTriplets(triplet.begin(), triplet.end());
   }
 
-  void SetRhos(Eigen::VectorXd p_rhos) {
-    int size = p_rhos.size();
-    rhos_.resize(size);
-    rhos_ = p_rhos;
+  void addDBCForLoad() {
+    for (auto dof_value : v_dofs_to_set_) {
+      auto [dof, value] = dof_value;
+      K_spMat_.coeffRef(dof, dof) *= 1e7;
+      F_.coeffRef(dof, 0) = K_spMat_.coeffRef(dof, dof) * value;
+    }
   }
 
  public:
   std::vector<Eigen::MatrixXd> eleKe_;
-  Eigen::MatrixXd K_;
   Eigen::VectorXd vol_;
 
  public:
@@ -106,9 +125,10 @@ class Simulation {
   //保存每个顶点对应的所有四面体以及在四面体中是第几个点
   std::vector<std::set<std::pair<int, int>>> vFLoc_;
 
-  Eigen::VectorXd rhos_;
   Eigen::SparseMatrix<double> K_spMat_;
   Eigen::CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver_;
   Eigen::SparseMatrix<double> F_;
+  Eigen::VectorXi iK_, jK_;
+  std::vector<std::pair<unsigned, double>> v_dofs_to_set_;
 };
 }  // namespace da::sha

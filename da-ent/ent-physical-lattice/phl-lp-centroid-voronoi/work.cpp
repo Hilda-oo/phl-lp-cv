@@ -308,3 +308,19 @@ void GenerateSampleSeed(int num_seed, std::string model_file, std::string model_
   da::AnisotropicMatWrapper anisotropicMatWrapper;
   anisotropicMatWrapper.generateSampleSeedEntry(path, outpath, num_seed);
 }
+
+void GenerateUniformSampleSeed(int xn, int yn, int zn, std::string model_file, std::string model_name){
+  // da::fs_path path = "femur/input/femur.obj";
+  da::fs_path outpath = model_file;
+  da::fs_path path = outpath / "input" / model_name;
+  da::AnisotropicMatWrapper anisotropicMatWrapper;
+  anisotropicMatWrapper.generateUniformSampleSeedEntry(path, outpath, xn, yn, zn);
+}
+
+void GenerateMixSampleSeed(int sn, int xn, int yn, int zn, std::string model_file, std::string model_name){
+  // da::fs_path path = "femur/input/femur.obj";
+  da::fs_path outpath = model_file;
+  da::fs_path path = outpath / "input" / model_name;
+  da::AnisotropicMatWrapper anisotropicMatWrapper;
+  anisotropicMatWrapper.generateMixSampleSeedEntry(path, outpath, sn, xn, yn, zn);
+}

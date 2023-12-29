@@ -1,6 +1,7 @@
 #pragma once
 
 #include <oneapi/tbb/parallel_for.h>
+#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <map>
 #include <utility>
@@ -45,15 +46,16 @@ class ThermoelasticWrapper {
   Eigen::VectorXi i_dFth_dT_, j_dFth_dT_;
   // i:i: j:每个元素自由度的索引
   Eigen::VectorXi i_dFth_drho_, j_dFth_drho_;
+  Eigen::VectorXd rhos_;
 
-  std::shared_ptr<NestedBackgroundMesh> nested_background_;
   std::vector<Eigen::VectorXi> macId2tetsId_;
   Eigen::MatrixXd node_;
   int nEle_;
 
-  Eigen::VectorXd dc_drho_;
-  Eigen::MatrixXd dT_drho_;
-  double c_;
+  Eigen::SparseMatrix<double> neighbors_;
+public:
+  std::shared_ptr<NestedBackgroundMesh> nested_background_;
+
 
  public:
   ThermoelasticWrapper(const std::shared_ptr<NestedBackgroundMesh> &p_nested_background,
@@ -68,7 +70,10 @@ class ThermoelasticWrapper {
     Eigen::MatrixXd TV;
     Eigen::MatrixXi TT;
     // get TV, TT and the relationship of tets with macro cells from nested_background_mesh_
+    spdlog::debug("process NestedBackgound Mesh");
     processNestedBackgoundMesh(TV, TT);
+    // spdlog::debug("process Neighbors");
+    // processNeighbors(TV, TT, p_para->r_min);
     node_            = TV;
     sp_therMech_sim_ = std::make_shared<sha::ThermoelasticSim>(TV, TT, p_YM, p_PR, p_TC, p_TEC,
                                                                p_mechDBC, p_mechNBC);
@@ -86,14 +91,19 @@ class ThermoelasticWrapper {
                                     double lambda0, const std::vector<int> &v_dof)
       -> Eigen::MatrixXd;
 
-  void simulate(Eigen::VectorXd p_rhos);
+  void simulate(Eigen::VectorXd p_rhos, Eigen::VectorXd &dc_drho, Eigen::MatrixXd &dT_drho,
+                double &C);
 
+ public:
   double ComputeAverageMicroTetEdgeLength() {
     return nested_background_->ComputeAverageMicroTetEdgeLength();
   }
 
- public:
-  Eigen::VectorXd getThermalU() { return sp_thermal_sim_->U_; }
+  Eigen::VectorXd getSetDofThermalU() {
+    std::vector<int> v_dof(sp_thermal_sim_->set_dofs_to_load_.begin(),
+                           sp_thermal_sim_->set_dofs_to_load_.end());
+    return sp_thermal_sim_->U_(v_dof);
+  }
 
   auto getTemperature() -> std::vector<double> {
     Eigen::VectorXd temp = sp_thermal_sim_->U_;
@@ -103,26 +113,20 @@ class ThermoelasticWrapper {
     return temp_vec;
   }
 
-  auto getStress() -> std::vector<std::vector<double>> {
-    int eleN = sp_therMech_sim_->GetNumEles();
-    std::vector<std::vector<double>> stress_vec(eleN);
-    tbb::parallel_for(0, eleN, 1, [&](int eI) {
-      Eigen::VectorXd stress;
-      stress.resize(6);
-      auto eleId2MechDof = sp_therMech_sim_->GetMapEleId2DofsVec()[eI];
-      auto eleId2TherDof = sp_thermal_sim_->GetMapEleId2DofsVec()[eI];
-      Eigen::VectorXd Ue = sp_therMech_sim_->U_(eleId2MechDof);
-      double Te          = sp_therMech_sim_->U_(eleId2TherDof).mean();
-      Eigen::MatrixXd Di = sp_therMech_sim_->GetDI(eI);
-      stress             = Di * sp_therMech_sim_->GetElementB(eI) * Ue -
-               Di * sp_therMech_sim_->thermal_expansion_coefficient_ * (Te - sp_para_->T_ref) *
-                   (Eigen::VectorXd(6) << 1, 1, 1, 0, 0, 0).finished().transpose();
-      stress_vec[eI].resize(3);
-      std::copy_n(stress.topRows(3).data(), 3, stress_vec[eI].data());
-    });
-    return stress_vec;
+  auto getRhos() -> std::vector<double> {
+    int size = rhos_.size();
+    std::vector<double> rhos_vec(size);
+    std::copy_n(rhos_.data(), size, rhos_vec.data());
+    return rhos_vec;
   }
 
+  auto getCellStress() -> std::vector<std::vector<double>>;
+
+  auto queryStress(Eigen::MatrixXd &query_points) -> std::vector<Eigen::VectorXd>;
+
+  void extractResult(fs_path out_path);
+
+ public:
   auto getContrlPara() { return sp_para_; }
 
   int getMacroCellNum() { return nEle_; }
@@ -133,15 +137,7 @@ class ThermoelasticWrapper {
 
   auto getMacIdMaptetsId() { return macId2tetsId_; }
 
-  double getCompliance() { return c_; }
-
-  auto getdCdrho() { return dc_drho_; }
-
-  auto getdTdrho() { return dT_drho_; }
-
   auto getAllTetVol() { return sp_therMech_sim_->vol_; }
-
-  auto getSetDofs() { return sp_thermal_sim_->set_dofs_to_load_; }
 
  private:
   void preCompute() {
@@ -201,8 +197,8 @@ class ThermoelasticWrapper {
       for (index_t tI = 0; tI < num_tetrahedrons; ++tI) {
         Eigen::Vector4i tet = micT_.row(tI);
         Eigen::Vector4i tetIdx;
-        tetIdx << micId2verticeId[tet(0)], micId2verticeId[tet(1)],
-            micId2verticeId[tet(2)], micId2verticeId[tet(3)];
+        tetIdx << micId2verticeId[tet(0)], micId2verticeId[tet(1)], micId2verticeId[tet(2)],
+            micId2verticeId[tet(3)];
         tetVec.push_back(tetIdx);
         id_tets_in_mac(tI) = tN;
         ++tN;
@@ -217,6 +213,36 @@ class ThermoelasticWrapper {
     for (index_t tI = 0; tI < tN; ++tI) {
       p_TT.row(tI) = tetVec.at(tI);
     }
+  }
+
+  void processNeighbors(Eigen::MatrixXd p_TV, Eigen::MatrixXi p_TT, double radius) {
+    int tetNum = p_TT.rows();
+    neighbors_.resize(tetNum, tetNum);
+    spdlog::info("tetNUm:{}", tetNum);
+    
+    auto ti_te_distance = [&](Eigen::VectorXi t1, Eigen::VectorXi t2) -> double {
+      Eigen::VectorXd centroid1 = p_TV(t1, Eigen::all).colwise().mean();
+      Eigen::VectorXd centroid2 = p_TV(t2, Eigen::all).colwise().mean();
+      return (centroid1 - centroid2).cwiseAbs().norm();
+    };
+    oneapi::tbb::parallel_for(0, static_cast<int>(tetNum), 1, [&](int _tI) {
+      
+      // for (int _tI = 0; _tI < tetNum; _tI++) {
+        spdlog::info("tet:{}", _tI);
+      Eigen::VectorXi ti = p_TT.row(_tI);
+      for (int _i = _tI + 1; _i < tetNum; _i++) {
+        if (neighbors_.coeff(_tI, _i) > 0 || neighbors_.coeff(_i, _tI) > 0) {
+          continue;
+        }
+        Eigen::VectorXi te = p_TT.row(_i);
+        double distance = ti_te_distance(ti, te);
+        if (distance < radius) {
+          neighbors_.coeffRef(_tI, _i) = distance;
+        }
+      }
+    });
+      // }
+    spdlog::debug("neighbor:{}", neighbors_.nonZeros());
   }
 };
 }  // namespace da::sha

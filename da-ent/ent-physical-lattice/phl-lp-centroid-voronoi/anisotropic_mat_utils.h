@@ -62,6 +62,24 @@ class AnisotropicMatWrapper {
                                size_t num_seed = 100);
 
   /**
+   * Given mesh and the number of seeds, get sampled seeds
+   * @param mesh_path mesh file path
+   * @param seed_path seed file path to conserve
+   * @param num_seed the number of seeds you need
+   */
+  void generateUniformSampleSeedEntry(const fs_path &mesh_path, const fs_path &seed_path,
+                                      size_t xnum, size_t ynum, size_t znum);
+
+  /**
+   * Given mesh and the number of seeds, get sampled seeds
+   * @param mesh_path mesh file path
+   * @param seed_path seed file path to conserve
+   * @param num_seed the number of seeds you need
+   */
+  void generateMixSampleSeedEntry(const fs_path &mesh_path, const fs_path &seed_path, size_t snum,
+                                  size_t xnum, size_t ynum, size_t znum);
+
+  /**
    * Given field matrix, get new field Matrix processed by laplace smoothing
    * @param field_maxtirx field matrix
    * @param lmd decline the speed of smoothing

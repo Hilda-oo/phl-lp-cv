@@ -16,7 +16,8 @@ class Config {
   std::string backgroundCellsPath;
   std::string cellTetsPath;
   std::string cellPolyhedronPath;
-
+  
+  std::string level;
   std::string condition;
 
   double YM      = 1e5;

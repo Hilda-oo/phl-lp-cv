@@ -36,27 +36,12 @@ void ModelAlgorithm::Update(const Eigen::MatrixXd &mat_variables) {
   current_seeds_    = mat_variables.leftCols(3);
   current_radiuses_ = mat_variables.col(3);
   // voronoi_diagram_ =
-  //     CreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, 0, sharp_angle_, true);
+      // CreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, 0, sharp_angle_, true);
   voronoi_diagram_ =
       FastCreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, sharp_angle_);
 
-  //output voronoi cell
-  // for (index_t cellIdx = 0; cellIdx < voronoi_diagram_.cells.size(); cellIdx++) {
-  //   sha::WriteMatMesh3ToVtk((WorkingResultDirectoryPath() / "voronoiCell" /
-  //                            fmt::format("voronoi_triangle_mesh{}.vtk", cellIdx))
-  //                               .string(),
-  //                           voronoi_diagram_.cells.at(cellIdx).cell_triangle_mesh);
-  // }
   voronoi_beams_mesh_ = ComputeRelatedEdgesFromVoronoiDiagram(voronoi_diagram_, mesh_.AlignedBox(),
                                                               map_voronoi_beam_idx_to_cell_indices);
-  // std::map<int, int> sta;
-  // for (auto &cell : map_beam_idx_to_cell_indices) {
-  //   sta[cell.size()] += 1;
-  // }
-  // for (auto [k, v] : sta) {
-  //   std::cout << k << ": " << v << std::endl;
-  // }
-  // exit(5);
   voronoi_beams_radiuses_.resize(voronoi_beams_mesh_.NumBeams());
 
   for (index_t beam_idx = 0; beam_idx < voronoi_beams_mesh_.NumBeams(); ++beam_idx) {
@@ -69,88 +54,6 @@ void ModelAlgorithm::Update(const Eigen::MatrixXd &mat_variables) {
   }
   log::info("voronoi_beams_mesh_.beams = {}", voronoi_beams_mesh_.NumBeams());
 }
-/*
-void ModelAlgorithm::Update(const Eigen::MatrixXd &mat_variables) {
-  map_voronoi_beam_idx_to_cell_indices.clear();
-
-  current_seeds_    = mat_variables.leftCols(3);
-  current_radiuses_ = mat_variables.col(3);
-  // voronoi_diagram_ =
-  //     CreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, 0, sharp_angle_, true);
-  voronoi_diagram_ =
-      FastCreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, sharp_angle_);
-
-  //output voronoi cell
-  // for (index_t cellIdx = 0; cellIdx < voronoi_diagram_.cells.size(); cellIdx++) {
-  //   sha::WriteMatMesh3ToVtk((WorkingResultDirectoryPath() / "voronoiCell" /
-  //                            fmt::format("voronoi_triangle_mesh{}.vtk", cellIdx))
-  //                               .string(),
-  //                           voronoi_diagram_.cells.at(cellIdx).cell_triangle_mesh);
-  // }
-  voronoi_beams_mesh_ = ComputeRelatedEdgesFromVoronoiDiagram(voronoi_diagram_, mesh_.AlignedBox(),
-                                                              map_voronoi_beam_idx_to_cell_indices);
-  // std::map<int, int> sta;
-  // for (auto &cell : map_beam_idx_to_cell_indices) {
-  //   sta[cell.size()] += 1;
-  // }
-  // for (auto [k, v] : sta) {
-  //   std::cout << k << ": " << v << std::endl;
-  // }
-  // exit(5);
-  voronoi_beams_radiuses_.resize(voronoi_beams_mesh_.NumBeams());
-
-  for (index_t beam_idx = 0; beam_idx < voronoi_beams_mesh_.NumBeams(); ++beam_idx) {
-    // double beam_radius = boost::accumulate(map_voronoi_beam_idx_to_cell_indices.at(beam_idx), 0.0,
-    //                                        [&](double total_radius, index_t cell_idx) {
-    //                                          return total_radius + current_radiuses_(cell_idx);
-    //                                        });
-
-    int lx = 100, ly = 30, lz = 30;
-    int num_property = top_density_.size();
-
-    auto getIndexFromCoord = [](double x, int min, int max) -> int {
-      int new_x = std::round(x + (max - min) / 2.0);
-      // x = std::trunc(x + (max - min) / 2);
-      // x = ceil(x + (max - min) / 2);
-      // x = floor(x + (max - min) / 2);
-      return new_x;
-    };
-
-    auto getVerticeDensity = [&](Eigen::Vector3d v) -> double {
-      int x              = getIndexFromCoord(v[0], 0, lx);
-      int y              = getIndexFromCoord(v[1], 0, ly);
-      int z              = getIndexFromCoord(v[2], 0, lz);
-      int index_property = z * lx * ly + y * lx + x;
-      double value = 0.0;
-      if (index_property >= 0 && index_property <= num_property) {
-        value = top_density_.at(index_property);
-      }
-      return value;
-    };
-  
-    double beam_radius = boost::accumulate(map_voronoi_beam_idx_to_cell_indices.at(beam_idx), 0.0,
-                                           [&](double total_radius, index_t cell_idx) {
-                                            auto &tet = background_mesh_.nested_cells_[cell_idx].tetrahedrons;
-                                            auto &TV  = tet.mat_coordinates;
-                                            for (int vi = 0; vi < 4; vi++) {
-                                              total_radius += getVerticeDensity(TV.row(vi));
-                                            }
-                                            double result = total_radius / 4.0;
-                                            current_radiuses_(cell_idx) = result;
-                                            return result;
-                                           });
-    voronoi_beams_radiuses_(beam_idx) =
-        beam_radius / map_voronoi_beam_idx_to_cell_indices.at(beam_idx).size();
-  }
-  double min_density = voronoi_beams_radiuses_.minCoeff();
-  double max_density = voronoi_beams_radiuses_.maxCoeff();
-  double mean_density = (max_density - min_density) / (voronoi_beams_mesh_.NumBeams() * 1.0);
-  double mean_radius = (max_radius_ - min_radius_) / voronoi_beams_mesh_.NumBeams();
-  for (index_t beam_idx = 0; beam_idx < voronoi_beams_mesh_.NumBeams(); ++beam_idx) {
-    voronoi_beams_radiuses_(beam_idx) = min_radius_ + (voronoi_beams_radiuses_(beam_idx) - min_density) / mean_density * mean_radius;
-  }
-  log::info("voronoi_beams_mesh_.beams = {}", voronoi_beams_mesh_.NumBeams());
-}*/
 
 double ModelAlgorithm::ComputeMinDistance(const Eigen::Vector3d &x) {
   auto phij = [](const Eigen::Vector3d &a, const Eigen::Vector3d &b, double radius,

@@ -17,7 +17,7 @@ void ThermoelasticOpt::optimize() {
   double alpha_min = alpha0 * sp_para_->E_factor;
   std::vector<int> v_dof(sp_thermal_sim_->set_dofs_to_load_.begin(),
                          sp_thermal_sim_->set_dofs_to_load_.end());
-  spdlog::info("end Precompute");
+  spdlog::debug("end Precompute");
 
   // start iteration
   while (change > sp_para_->tol_x && loop < sp_para_->max_loop) {
@@ -153,7 +153,7 @@ double ThermoelasticOpt::EvaluateEnergyC(const Eigen::VectorXd &xPhys_col,
   Eigen::VectorXd rhs = dFth_dT * 2 * lambda_m;
   for (auto dof_value : sp_thermal_sim_->v_dofs_to_set_) {
     auto [dof, value] = dof_value;
-    rhs(dof) = sp_thermal_sim_->K_(dof, dof) * value;
+    rhs(dof) = sp_thermal_sim_->K_spMat_.coeff(dof, dof) * value;
   }
   Eigen::VectorXd lambda_t = sp_thermal_sim_->solver_.solve(rhs);
 
@@ -225,7 +225,7 @@ auto ThermoelasticOpt::EvaluateTemperatureConstrain(
     Li(Tdof) = -1;
     for (auto dof_value : sp_thermal_sim_->v_dofs_to_set_) {
       auto [dof, value] = dof_value;
-      Li(dof) = sp_thermal_sim_->K_(dof, dof) * value;
+      Li(dof) = sp_thermal_sim_->K_spMat_.coeff(dof, dof) * value;
     }
     Eigen::VectorXd lambda_i = sp_thermal_sim_->solver_.solve(Li);
     // auto solver_th = sp_thermal_sim_->GetLinSysSolver();

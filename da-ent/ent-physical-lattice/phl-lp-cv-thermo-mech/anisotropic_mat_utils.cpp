@@ -1,141 +1,27 @@
 #include "anisotropic_mat_utils.h"
-#include <spdlog/spdlog.h>
 #include "sha-io-foundation/data_io.h"
 #include "sha-io-foundation/mesh_io.h"
 #include "sha-surface-mesh/sample.h"
 
 namespace da {
 
-AnisotropicMatWrapper::AnisotropicMatWrapper() {
-  top_density_.clear();
-  TT_.resize(0, 0);
-  TV_.resize(0, 0);
-  stress_on_point_.resize(0, 3);
-}
+AnisotropicMatWrapper::AnisotropicMatWrapper() {}
 
-auto AnisotropicMatWrapper::getAnisotropicMatByTopDensity(const fs_path& field_path,
-                                                          Eigen::MatrixXd& query_points,
-                                                          bool field_flag)
+auto AnisotropicMatWrapper::getAnisotropicMatByFemStress(Eigen::MatrixXd& query_points,
+                                                         std::vector<Eigen::VectorXd> stress_field)
     -> std::vector<Eigen::Matrix3d> {
-  log::info("get anisotropic matrix by topopt");
-  if (top_density_.empty()) {
-    top_density_ = readDensityFromFile(field_path);
-    log::info("Loading density field");
-  }
+  int qN = static_cast<int>(query_points.rows());
+  Assert(qN == stress_field.size(), "the number of points != the rows of stress_field");
+  std::vector<Eigen::Matrix3d> stressQ(qN);
 
-  int num_property = top_density_.size();
-  int num_point    = query_points.rows();
-  std::vector<Eigen::Matrix3d> anisotropicMat(0);
-  auto getIndexFromCoord = [](double x, int min, int max) -> int {
-    int new_x = std::round(x + (max - min) / 2.0);
-    // x = std::trunc(x + (max - min) / 2);
-    // x = ceil(x + (max - min) / 2);
-    // x = floor(x + (max - min) / 2);
-    return new_x;
-  };
-  int lx = 100, ly = 30, lz = 30;
-  for (index_t pI = 0; pI < num_point; pI++) {
-    int x              = getIndexFromCoord(query_points.row(pI)[0], 0, lx);
-    int y              = getIndexFromCoord(query_points.row(pI)[1], 0, ly);
-    int z              = getIndexFromCoord(query_points.row(pI)[2], 0, lz);
-    int index_property = z * lx * ly + y * lx + x;
-    Eigen::Matrix3d mat;
-    if (index_property < 0 || index_property > num_property) {
-      mat.setZero();
-    } else {
-      double value = top_density_.at(index_property);
-      for (index_t mI = 0; mI < 3; mI++) {
-        mat(mI, mI) = value;
-      }
-    }
-    anisotropicMat.push_back(mat);
+  for (index_t pI = 0; pI < qN; ++pI) {
+    stressQ.at(pI).setIdentity();
+    stressQ[pI](0, 0) = stress_field[pI](0);
+    stressQ[pI](1, 1) = stress_field[pI](1);
+    stressQ[pI](2, 2) = stress_field[pI](2);
   }
-  Assert(anisotropicMat.size() == num_point);
-  return anisotropicMat;
-}
-
-auto AnisotropicMatWrapper::getAnisotropicMatByTopStress(const fs_path& field_base_path,
-                                                         Eigen::MatrixXd& query_points,
-                                                         bool field_flag)
-    -> std::vector<Eigen::Matrix3d> {
-  log::info("get stress by topopt");
-  if (stress_on_point_.size() == 0) {
-    fs_path stressX_path = field_base_path / "stressX_field_matrix.vtk";
-    fs_path stressY_path = field_base_path / "stressY_field_matrix.vtk";
-    fs_path stressZ_path = field_base_path / "stressZ_field_matrix.vtk";
-    Eigen::VectorXd stress_x;
-    Eigen::VectorXd stress_y;
-    Eigen::VectorXd stress_z;
-    stress_x = readCellDataFromVTK(stressX_path);
-    stress_y = readCellDataFromVTK(stressY_path);
-    stress_z = readCellDataFromVTK(stressZ_path);
-    Assert(stress_x.size() == stress_y.size() && stress_x.size() == stress_z.size(),
-           "stress'scale does not match each other");
-    stress_on_point_.resize(stress_x.size(), 3);
-    stress_on_point_.col(0) = stress_x;
-    stress_on_point_.col(1) = stress_y;
-    stress_on_point_.col(2) = stress_z;
-    sha::WriteMatrixToFile(WorkingResultDirectoryPath() / "debug/stress_on_points.txt",
-                           stress_on_point_);
-    // // 23/6/2 add laplace smooth
-    // stress_on_point_ = fieldLaplaceSmooth(stress_on_point_, 1);
-
-    // sha::WriteMatrixToFile(WorkingResultDirectoryPath() / "debug/laplace_stress_on_points.txt",
-    //                        stress_on_point_);
-    log::info("Loading stress obtained by topopt");
-  }
-
-  int num_property = stress_on_point_.rows();
-  int num_point    = query_points.rows();
-  std::vector<Eigen::Matrix3d> anisotropicMat(num_point);
-  auto getIndexFromCoord = [](double x, int min, int max) -> int {
-    int new_x = std::round(x + (max - min) / 2.0);
-    // int new_x = std::trunc(x + (max - min) / 2);
-    // int new_x = ceil(x + (max - min) / 2);
-    // int new_x = floor(x + (max - min) / 2);
-    return new_x;
-  };
-  int lx = 100, ly = 30, lz = 30;
-  Eigen::MatrixXd query_stress_mat(num_point, 3);
-  for (index_t pI = 0; pI < num_point; pI++) {
-    int x              = getIndexFromCoord(query_points.row(pI)[0], 0, lx);
-    int y              = getIndexFromCoord(query_points.row(pI)[1], 0, ly);
-    int z              = getIndexFromCoord(query_points.row(pI)[2], 0, lz);
-    y                  = y > 0 ? y - 1 : 0;
-    z                  = z > 0 ? z - 1 : 0;
-    int index_property = z * lx * ly + y * lx + x;
-    if (index_property < 0 || index_property > num_property) {
-      log::warn("index_property={},num_property={},x={},{},y={},{},z={},{}", index_property,
-                num_property, query_points.row(pI)[0], x, query_points.row(pI)[1], y,
-                query_points.row(pI)[2], z);
-      query_stress_mat.row(pI) << 1e-5, 1e-5, 1e-5;
-    } else {
-      query_stress_mat.row(pI) = stress_on_point_.row(index_property);
-    }
-  }
-  sha::WriteMatrixToFile(WorkingResultDirectoryPath() / "debug/query_stress_mat.txt",
-                         query_stress_mat);
-  Eigen::Vector3d stress_range;
-  stress_range = query_stress_mat.cwiseAbs().leftCols<3>().colwise().maxCoeff();
-  // const double stress_scale        = 0.2;  //l-r
-  // const double stress_scale        = 0.08;     //l-rightTop
-  const double stress_scale = 0.24;  // l-rightBottom2
-  for (index_t qI = 0; qI < num_point; qI++) {
-    anisotropicMat[qI].setZero();
-    anisotropicMat[qI](0, 0) = query_stress_mat(qI, 0);
-    anisotropicMat[qI](1, 1) = query_stress_mat(qI, 1);
-    anisotropicMat[qI](2, 2) = query_stress_mat(qI, 2);
-    // anisotropicMat[qI](0, 0) = query_stress_mat.cwiseAbs()(qI, 0);
-    // anisotropicMat[qI](1, 1) = query_stress_mat.cwiseAbs()(qI, 1);
-    // anisotropicMat[qI](2, 2) = query_stress_mat.cwiseAbs()(qI, 2);
-    // normalize stress
-    anisotropicMat[qI](0, 0) /= stress_range(0);
-    anisotropicMat[qI](1, 1) /= stress_range(1);
-    anisotropicMat[qI](2, 2) /= stress_range(2);
-
-    anisotropicMat[qI] *= stress_scale;
-  }
-  return anisotropicMat;
+  log::debug("process stress successful", stressQ.size());
+  return stressQ;
 }
 
 void AnisotropicMatWrapper::generateSampleSeedEntry(const fs_path& mesh_path,
@@ -149,6 +35,8 @@ void AnisotropicMatWrapper::generateSampleSeedEntry(const fs_path& mesh_path,
                         sample_seed);
   log::info("generate {} seeds successful", sample_seed.rows());
 }
+
+
 
 auto AnisotropicMatWrapper::getAdjPoints(Eigen::Vector3d& point) -> Eigen::MatrixXd {
   std::vector<Eigen::Vector3d> adjPoint_vector(0);

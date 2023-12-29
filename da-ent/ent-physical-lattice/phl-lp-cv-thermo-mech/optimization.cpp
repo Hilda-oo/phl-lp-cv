@@ -1,7 +1,9 @@
 #include "optimization.h"
-#include "sha-io-foundation/data_io.h"
 #include <mma/MMASolver.h>
+#include <spdlog/spdlog.h>
 #include <autodiff/reverse/var/eigen.hpp>
+#include "Eigen/src/Core/Matrix.h"
+#include "sha-io-foundation/data_io.h"
 
 namespace da {
 
@@ -98,72 +100,56 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
     Eigen::VectorXd rhos_para;
     int size = rhos.size();
     std::vector<double> rhos_vec(0);
-    tbb::parallel_for(0, size, 1, [&](int rI) {
+    for (int rI = 0; rI < size; ++rI) {
       Eigen::VectorXd rho = rhos.at(rI);
       int row             = rho.rows();
       for (int ri = 0; ri < row; ++ri) {
         rhos_vec.push_back(rho(ri));
       }
-    });
+    }
     size = rhos_vec.size();
     rhos_para.resize(size);
     std::copy_n(rhos_vec.data(), size, rhos_para.data());
 
+    double C, V, E;
+    Eigen::VectorXd dC, dT, dV, dE;
+
     // simulation
-    simulation_->simulate(rhos_para);
+    Eigen::VectorXd dCdH;
+    Eigen::MatrixXd dTdH;
+    simulation_->simulate(rhos_para, dCdH, dTdH, C);
 
     // compute differential
     std::vector<std::vector<Eigen::VectorXd>> dH;
     std::vector<Eigen::VectorXi> mat_variable_to_effected_macro_indices;
     EvaluateFiniteDifference(dH, mat_variable_to_effected_macro_indices);
 
-    double C, V, E;
-    Eigen::VectorXd dC, dT, dV, dE;
-
-    C  = simulation_->getCompliance();
     V  = EvaluateVolume(rhos, dH, mat_variable_to_effected_macro_indices, dV);
     E  = EvaluetaEnergyL(dE, mode);
-    dC = EvaluateDC(simulation_->getdCdrho(), rhos, dH, mat_variable_to_effected_macro_indices);
-    dT = EvaluateDT(simulation_->getdTdrho(), rhos, dH, mat_variable_to_effected_macro_indices);
+    dC = EvaluateDC(dCdH, rhos, dH, mat_variable_to_effected_macro_indices);
+    dT = EvaluateDT(dTdH, rhos, dH, mat_variable_to_effected_macro_indices);
 
-    // log::info("mean: dC:{}, dV:{}, dE:{}", dC.mean(), dV.mean(), dE.mean());
-
-    // the occupation of scalar_E_
-    double scalar_EI = 0.2;
-    // end add
-    double dgt_c = dgt0 - static_cast<int>(log10(dC.cwiseAbs().maxCoeff()));
-    double dgt_v = dgt0 - static_cast<int>(log10(dV.cwiseAbs().maxCoeff()));
-    double dgt_e = dgt0 - static_cast<int>(log10(dE.cwiseAbs().maxCoeff()));
-    double dgt_t = dgt0 - static_cast<int>(log10(dT.cwiseAbs().maxCoeff()));
-    double tmp_c = std::pow(10.0, dgt_c);
-    double tmp_v = std::pow(10.0, dgt_v);
-    double tmp_e = std::pow(10.0, dgt_e);
-    double tmp_t = std::pow(10.0, dgt_t);
-    dC           = (dC * tmp_c).array().round() / tmp_c;
-    dV           = (dV * tmp_v).array().round() / tmp_v;
-    dE           = (dE * tmp_e).array().round() / tmp_e;
-    dT           = (dT * tmp_t).array().round() / tmp_t;
-
-    // normalization
-    dC /= dC.maxCoeff();
-    dV /= dV.maxCoeff();
-    dE /= dE.maxCoeff();
-    dT /= dT.maxCoeff();
+    dC /= dC.cwiseAbs().maxCoeff();
+    dE /= dE.cwiseAbs().maxCoeff();
+    log::info("mean: dC:{}, dV:{}, dE:{}, dT:{}", dC.mean(), dV.mean(), dE.mean(), dT.mean());
+    log::info("C = {:.6}, E = {:.6}, V = {:.3f}", C, E, V);
 
     if (iteration_idx == 1) {
       num_constrants = 1 + dT.cols();
       mma            = std::make_shared<MMASolver>(num_variables_, num_constrants);
     }
 
+    // double f0val = C;
+    // double f0val = C * 10e-12 * (1.0 - scalar_E_) + E * scalar_E_; //cube206
     double f0val = C * (1.0 - scalar_E_) + E * scalar_E_;
 
+    // Eigen::VectorXd df0dx = dC;
     Eigen::VectorXd df0dx = dC * (1.0 - scalar_E_) + dE * scalar_E_;
-    std::vector<int> v_dof(simulation_->getSetDofs().begin(), simulation_->getSetDofs().end());
+    auto setDofT = simulation_->getSetDofThermalU().array() / simulation_->getContrlPara()->T_limit - 1;
     Eigen::VectorXd fval =
-        (Eigen::VectorXd(num_constrants) << (V / volfrac_ - 1),
-         simulation_->getThermalU()(v_dof).array() / simulation_->getContrlPara()->T_limit - 1)
-            .finished();
-    Eigen::VectorXd dv_constraint = dV / volfrac_;
+        (Eigen::VectorXd(num_constrants) << (V / num_variables_ - volfrac_), setDofT).finished();
+        
+    Eigen::VectorXd dv_constraint = 1.0 / num_variables_ * dV;
     Eigen::MatrixXd dt_constraint = 1.0 / simulation_->getContrlPara()->T_limit * dT;
     Eigen::MatrixXd dfdx =
         (Eigen::MatrixXd(num_variables_, num_constrants) << dv_constraint, dt_constraint)
@@ -176,9 +162,6 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
     spdlog::info("mma update");
     mma->Update(variables_tmp.data(), df0dx.data(), fval.data(), dfdx.data(),
                 variables_bounds_.first.data(), variables_bounds_.second.data());
-
-    // double step = 5e-2;
-    // variables_tmp -= step * dE / dE.norm();
 
     mat_variables_ = variables_tmp.reshaped(num_cols_, num_seeds_).transpose();
 
@@ -210,21 +193,19 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
       IterationFunction(iteration_idx, mat_variables_, C, dC, E, dE, V, dV);
     }
 
-    spdlog::critical("Optimization iter# {}, C = {:.6}, E = {:.6f}, V = {:.3f}, ch = {:.7f}",
+    spdlog::critical("Optimization iter# {}, C = {:.6}, E = {:.6}, V = {:.3f}, ch = {:.7f}",
                      iteration_idx, C, E, V, objVr5);
     changeVec[iteration_idx - 1] = objVr5;
   }
-
   mat_seeds_result = mat_variables_.leftCols(3);
   radiuses_result  = mat_variables_.col(3);
   sha::WriteVectorToFile(WorkingResultDirectoryPath() / "ch.txt", changeVec);
-  lp_CVT_wrapper_->WriteShrinkCVD(WorkingResultDirectoryPath(), mat_variables_);
 }
 
 void LpCVTOptimizer::EvaluateFiniteDifference(
     std::vector<std::vector<Eigen::VectorXd>> &dH,
     std::vector<Eigen::VectorXi> &mat_varibale_to_effected_macro_indices) {
-  spdlog::info("compute dH");
+  spdlog::debug("compute dH");
   dH.resize(num_variables_);
   // boost::progress_display show_progress(nCell);
   double time_rho = 0.0;
@@ -266,9 +247,8 @@ void LpCVTOptimizer::EvaluateFiniteDifference(
       for (int i = 0; i < mat_varibale_to_effected_macro_num[varI]; ++i) {
         int macI    = mat_varibale_to_effected_macro_indices[varI](i);
         dH[varI][i] = (rho_plus[macI] - rho_minus[macI]) / (2 * finite_difference_step_);
-        Assert(
-            dH[varI][i].size() ==
-            simulation_->getNestedCells().at(macI).tetrahedrons.NumTetrahedrons());
+        Assert(dH[varI][i].size() ==
+               simulation_->getNestedCells().at(macI).tetrahedrons.NumTetrahedrons());
       }
     }
     // ++show_progress;
@@ -280,6 +260,7 @@ double LpCVTOptimizer::EvaluateVolume(
     const std::vector<Eigen::VectorXd> &rhos, const std::vector<std::vector<Eigen::VectorXd>> &dH,
     const std::vector<Eigen::VectorXi> &mat_variable_to_effected_macro_indices,
     Eigen::VectorXd &dV) const {
+  spdlog::debug("compute dV");
   Eigen::VectorXd all_mic_vol               = simulation_->getAllTetVol();
   std::vector<Eigen::VectorXi> macId2tetsId = simulation_->getMacIdMaptetsId();
   int macN                                  = simulation_->getMacroCellNum();
@@ -307,6 +288,7 @@ Eigen::VectorXd LpCVTOptimizer::EvaluateDC(
     const Eigen::VectorXd &dCdrho, const std::vector<Eigen::VectorXd> &rhos,
     const std::vector<std::vector<Eigen::VectorXd>> &dH,
     const std::vector<Eigen::VectorXi> &mat_variable_to_effected_macro_indices) const {
+  spdlog::debug("compute dC");
   // compute dCdH
   int macN = simulation_->getMacroCellNum();
   std::vector<Eigen::VectorXd> dCdH(macN);
@@ -339,6 +321,7 @@ Eigen::MatrixXd LpCVTOptimizer::EvaluateDT(
     const Eigen::MatrixXd &dTdrho, const std::vector<Eigen::VectorXd> &rhos,
     const std::vector<std::vector<Eigen::VectorXd>> &dH,
     const std::vector<Eigen::VectorXi> &mat_variable_to_effected_macro_indices) const {
+  spdlog::debug("compute dT");
   // compute dTdH
   int macN      = simulation_->getMacroCellNum();
   int setdofNum = dTdrho.cols();
@@ -358,7 +341,7 @@ Eigen::MatrixXd LpCVTOptimizer::EvaluateDT(
   }
   Eigen::MatrixXd dT;
   dT.setZero(num_variables_, setdofNum);
-  
+
   oneapi::tbb::parallel_for(0, static_cast<int>(num_variables_), 1, [&](int xI_) {
     const std::vector<Eigen::VectorXd> &dH_x = dH[xI_];
 
@@ -439,24 +422,16 @@ double LpCVTOptimizer::EvaluateEnergyR(Eigen::VectorXd &dR) {
 
 // Lp CVT Energy
 double LpCVTOptimizer::EvaluetaEnergyL(Eigen::VectorXd &dL, size_t mode) {
+  spdlog::debug("compute dL");
   // get seeds for stress field computation
   Eigen::MatrixXd query_seeds = lp_CVT_wrapper_->GetQuerySeeds(this->mat_variables_.leftCols(3));
 
   std::vector<Eigen::Matrix3d> field_matrix;
   switch (mode) {
     case 1:
-      break;
-    case 2:
-      // by top density
-      field_matrix = anisotropic_mat_wrapper_->getAnisotropicMatByTopDensity(
-          WorkingResultDirectoryPath() / "top" / "field_matrix.txt", query_seeds);
-      break;
-    case 3:
-      // by top stress
-      field_matrix = anisotropic_mat_wrapper_->getAnisotropicMatByTopStress(
-          WorkingResultDirectoryPath() / "top", query_seeds, 1);
-      anisotropic_mat_wrapper_->writeStressOrientation(
-          field_matrix, query_seeds, WorkingResultDirectoryPath() / "debug/stressOrient.vtk");
+      // with the resulted stress field of the thermo-elastic fem.
+      field_matrix = anisotropic_mat_wrapper_->getAnisotropicMatByFemStress(
+          query_seeds, simulation_->queryStress(query_seeds));
       break;
     default:
       // generate identity matrix for each query seed

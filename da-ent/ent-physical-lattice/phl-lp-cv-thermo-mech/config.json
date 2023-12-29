@@ -1,12 +1,13 @@
 {
-  "OptimizationExample": "cube","//": "USER DEFINED project name",
+  "OptimizationExample": "shelf-bracket","//": "USER DEFINED project name",
+  "level": "info",
   "path": {
-    "outPath": "/home/oo/project/vscode/designauto/exe/Workplace/result",
-    "meshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube-206-8w/input/cube405.obj",
-    "seedsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube-206-8w/seed-100.txt",
-    "backgroundCellsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube-206-8w/macro",
-    "cellTetsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube-206-8w/tet",
-    "cellPolyhedronPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/cube-206-8w/polyhedron"
+    "outputPath": "/home/oo/project/vscode/designauto/exe/Workplace/results/thermo-elastic/shelf-bracket",
+    "meshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/input/Shelf-Bracket-refined.obj",
+    "seedsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/seed-100.txt",
+    "backgroundCellsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/macro",
+    "cellTetsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/tet",
+    "cellPolyhedronPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/polyhedrons"
   },  
   "material": {
     "youngs_modulus": 2.1e11,  "//": "Young's modulus",
@@ -16,20 +17,20 @@
   },
   "model": {
     "radius": {
-      "init": 0.01,"//":"initial radius of beams",
-      "min": 0.005,
-      "max": 0.015
+      "init": 0.55,"//":"initial radius of beams",
+      "min": 0.45,
+      "max": 0.65
     },
     "shell": 0.03,"//":"shell thickness",
-    "cells": 512,"//":"macro cell number"
+    "cells": 1946,"//":"macro cell number"
   },
   "topology": {
-    "E": 0.5,"//":"weighted value",
-    "max_loop": 1,"//": "Maximum number of iterations for topology optimization",
+    "E": 0.2,"//":"weighted value",
+    "max_loop": 100,"//": "Maximum number of iterations for topology optimization",
     "volfrac": 0.3,"//": "0~1, Volume ratio restriction",
     "penal": 3.0,"//": "Useless",
     "r_min": 1.05,"//": "Convolution kernel size, less than 1 will result in checkerboard phenomenon",
-    "T_ref": 3120,"//": "K, Reference/Environment temperature",
+    "T_ref": 312,"//": "K, Reference/Environment temperature",
     "T_limit": 325,"//": "K, Maximum temperature limit in optimization",
     "R_E": 28,"//": "1~28, The higher the value, the closer the density is to 0 or 1",
     "R_lambda": 28,"//": "1~28, The higher the value, the closer the density is to 0 or 1",
@@ -39,49 +40,38 @@
     "//": "NBC: Neumann boundary condition; DBC: Dirichlet boundary condition",
     "NBC": [
       {
-        "min": [-0.01, 0.48, -0.01],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
-        "max": [0.51, 0.52, 1.01],"//": "0~1",
-        "val": [0.0, 0.0, -1e12],"//": "Pa, The z direction is subject to a -1e8 load"
+        "min": [0.34, -0.01, 0.90],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
+        "max": [0.35, 1.01, 1.01],"//": "0~1",
+        "val": [-1e8, 0.0, 0],"//": "Pa, The z direction is subject to a -1e8 load"
       }
 
     ],
     "DBC": [
       {
         "min": [-0.01, -0.01, -0.01],
-        "max": [1.01, 0.01, 1.01],
+        "max": [1.01, 1.01, 0.01],
         "dir": [1, 1, 1],"//": "0 or 1, indicates whether xyz directions are fixed"
-      },
-      {
-        "min": [-0.01, 0.99, -0.01],
-        "max": [1.01, 1.01, 1.01],
-        "dir": [1, 1, 1]
       }
     ]
   },
   "thermal_boundary_condition": {
     "NBC": [
       {
-        "min": [0.41, 0.18, -0.01],
-        "max": [0.8, 0.32, 1.01],
-        "heat_flux": 0.335e5, "//": "W, >=0"
+        "min": [0.15, 0.45, 0.25],
+        "max": [0.18, 0.55, 0.3],
+        "heat_flux": 0.335e1, "//": "W, >=0,18.355 for 324"
       },
       {
-        "min": [0.41, 0.68, -0.01],
-        "max": [0.8, 0.82, 1.01],
-        "heat_flux": 0.335e5, "//": "W, >=0"
+        "min": [0.15, 0.45, 0.7],
+        "max": [0.20, 0.55, 0.75],
+        "heat_flux": 0.335e1, "//": "W, >=0"
       }
-
     ],
     "DBC": [
       {
-        "min": [-0.01, -0.01, -0.01],
-        "max": [0.01, 1.01, 1.01],
-        "temperature": 3120, "//": "K, fixed temperature in DBC"
-      },
-      {
         "min": [0.99, -0.01, -0.01],
         "max": [1.01, 1.01, 1.01],
-        "temperature": 3120, "//": "K"
+        "temperature": 312, "//": "K, fixed temperature in DBC"
       }
     ]
   }

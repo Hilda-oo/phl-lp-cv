@@ -1,9 +1,9 @@
 #pragma once
 
 #include "lp_cvt_wrapper.h"
-#include "modeling.h"
 #include "anisotropic_mat_utils.h"
 #include "sha-fem-thermoelastic/ThermoelasticWrapper.h"
+#include "modeling.h"
 
 namespace da {
 class LpCVTOptimizer {

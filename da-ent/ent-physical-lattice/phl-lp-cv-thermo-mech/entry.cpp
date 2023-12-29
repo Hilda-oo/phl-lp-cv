@@ -1,5 +1,6 @@
 #include <boost/filesystem/operations.hpp>
 #include <iostream>
+#include "sha-base-framework/frame.h"
 #include "sha-entry-framework/frame.h"
 
 
@@ -19,7 +20,7 @@ int main(int argc, char **argv) {
   entry.AddCmdOption()("help,h", "Print help");
   entry.AddCmdOption()("working_directory,w",
                        po::value<std::string>(&working_directory_arg)
-                           ->default_value(boost::filesystem::current_path().string()));
+                           ->default_value(ProjectSourcePath().string()));
   entry.AddCmdOption()("mode,m", po::value<int>(&mode_arg)->default_value(0));
 
   entry.Run(argc, argv, [&](auto &variables_map, auto &description) {

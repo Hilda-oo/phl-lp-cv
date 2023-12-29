@@ -10,24 +10,15 @@ class AnisotropicMatWrapper {
  public:
   explicit AnisotropicMatWrapper();
 
-
   /**
    * Given query points Q, get their density
-   * @param field_path field matrix file path
    * @param query_points (nQ, 3), query points
-   * @param field_flag 1 for mech field, 0 for heat field
+   * @param stress_field (nQ, 6), stress of points
    */
-  auto getAnisotropicMatByTopDensity(const fs_path &field_path, Eigen::MatrixXd &query_points,
-                              bool field_flag = 1) -> std::vector<Eigen::Matrix3d>;
+  auto getAnisotropicMatByFemStress(Eigen::MatrixXd &query_points,
+                                    std::vector<Eigen::VectorXd> stress_field)
+      -> std::vector<Eigen::Matrix3d>;
 
-  /**
-   * Given query points Q, get their stress
-   * @param field_base_path field matrix file path
-   * @param query_points (nQ, 3), query points
-   * @param field_flag 1 for mech field, 0 for heat field
-   */
-  auto getAnisotropicMatByTopStress(const fs_path &field_base_path, Eigen::MatrixXd &query_points,
-                              bool field_flag = 1) -> std::vector<Eigen::Matrix3d>;                                                      
   /**
    * Given mesh and the number of seeds, get sampled seeds
    * @param mesh_path mesh file path
@@ -76,12 +67,5 @@ class AnisotropicMatWrapper {
    */
   auto eigenDecomposition(const Eigen::MatrixXd &A) -> std::pair<Eigen::MatrixXd, Eigen::MatrixXd>;
 
-  
-
- public:
-  std::vector<double> top_density_;  // density by topopt for generating anisotropic matrix
-  Eigen::MatrixXd TV_;   // vertices coordinates of the mesh (.vtk)
-  Eigen::MatrixXi TT_;   // vertice index of each tetrahedron of the mesh (.vtk)
-  Eigen::MatrixXd stress_on_point_; //x- y- z- stress on all points of the mesh
 };
 }  // namespace da

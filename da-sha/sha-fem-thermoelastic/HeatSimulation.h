@@ -10,7 +10,6 @@ namespace da::sha {
 class HeatSimulation : public Simulation<HEATDIM_> {
 public:
   double thermal_conductivity_;
-  std::vector<std::pair<unsigned, double>> v_dofs_to_set_;
   std::set<unsigned> set_dofs_to_load_;
 
 public: // constructor
@@ -46,9 +45,6 @@ public: // constructor
   void computeK();
   void solve();
   void setBC();
-  void addBCForLoad();
-
-  void ComputeGlobalK();
 
 public:
   Eigen::VectorXd material_int_TC_;

@@ -25,6 +25,10 @@ bool Config::loadFromJSON(const std::string &p_filePath) {
     condition = data["OptimizationExample"];
   }
 
+  if (data.count("level")) {
+    level = data["level"];
+  }
+
   if (data.count("path")) { // Path
     outputPath = data["path"]["outputPath"];
     meshFilePath = data["path"]["meshFilePath"];
