@@ -1,5 +1,6 @@
 #include "HeatSimulation.h"
 #include <oneapi/tbb/parallel_for.h>
+#include <spdlog/spdlog.h>
 #include "sha-base-framework/frame.h"
 #include "sha-simulation-utils/io_utils.h"
 #include "sha-simulation-utils/other_utils.h"
@@ -8,6 +9,7 @@
 namespace da::sha {
 
 void HeatSimulation::simulation() {
+  spdlog::debug("heat simulation");
   computeK();
   addDBCForLoad();
   solve();

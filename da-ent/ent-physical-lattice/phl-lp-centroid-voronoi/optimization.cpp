@@ -19,6 +19,7 @@
 #include <LpCVT/algebra/F_Lp.h>
 
 #include <oneapi/tbb.h>
+#include <spdlog/spdlog.h>
 
 namespace da {
 
@@ -148,7 +149,7 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
 
   std::vector<double> OBJ;
   //radius oo
-  modeling_->top_density_ = anisotropic_mat_wrapper_->readDensityFromFile(WorkingResultDirectoryPath() / "top" / "field_matrix.txt");
+  // modeling_->top_density_ = anisotropic_mat_wrapper_->readDensityFromFile(WorkingResultDirectoryPath() / "top" / "field_matrix.txt");
 
   modeling_->Update(mat_variables_);
 
@@ -180,8 +181,9 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
     std::vector<Eigen::VectorXd> rhos = modeling_->ComputeRhos();
 
     // simulation
+    spdlog::debug("begin to simulate");
     Eigen::VectorXd displacements = simulation_->Simulate(rhos);
-
+    spdlog::debug("end simulating");
     // log::info("displacements: {}", displacements.size());
     // log::info("macro: {}", simulation_->nested_background_->nested_cells_.size());
 
@@ -196,24 +198,9 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
     C = EvaluateEnergyC(displacements, rhos, dH, mat_variable_to_effected_macro_indices, dC);
     V = EvaluateVolume(rhos, dH, mat_variable_to_effected_macro_indices, dV);
     E = EvaluetaEnergyL(dE, mode);
+    log::info("C:{}, V:{}, E:{}", C, V, E);
+    log::info("mean: dC:{}, dV:{}, dE:{}", dC.mean(), dV.mean(), dE.mean());
 
-    // log::info("mean: dC:{}, dV:{}, dE:{}", dC.mean(), dV.mean(), dE.mean());
-
-    //add Lp cvt energy with identity instead of anisotropic matrix
-    // double EI;
-    // Eigen::VectorXd dEI;
-
-    // EI = EvaluetaEnergyL(dEI, 0);
-    // log::info("mean: dEI:{}", dEI.mean());
-
-    // double dgt_ei = dgt0 - static_cast<int>(log10(dEI.cwiseAbs().maxCoeff()));
-    // double tmp_ei = std::pow(10.0, dgt_ei);
-    // dEI = (dEI * tmp_ei).array().round() / tmp_ei;
-    // dEI /= dEI.maxCoeff();
-
-    //the occupation of scalar_E_
-    double scalar_EI = 0.2;
-    // end add
     double dgt_c = dgt0 - static_cast<int>(log10(dC.cwiseAbs().maxCoeff()));
     double dgt_v = dgt0 - static_cast<int>(log10(dV.cwiseAbs().maxCoeff()));
     double dgt_e = dgt0 - static_cast<int>(log10(dE.cwiseAbs().maxCoeff()));

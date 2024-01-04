@@ -7,6 +7,8 @@
 #include "sha-simulation-utils/boundary_conditions.h"
 #include "unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h"
 
+
+
 namespace da::sha {
 
 template <int dim>
@@ -89,6 +91,7 @@ class Simulation {
   }
 
   void addDBCForLoad() {
+    spdlog::debug("addDBCForLoad");
     for (auto dof_value : v_dofs_to_set_) {
       auto [dof, value] = dof_value;
       K_spMat_.coeffRef(dof, dof) *= 1e7;

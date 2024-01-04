@@ -4,6 +4,7 @@
 #include "sha-base-framework/frame.h"
 #include "util.h"
 #include "Amgcl.h"
+#include "AmgclCuda.h"
 #include "sha-simulation-utils/io_utils.h"
 #include "sha-simulation-utils/other_utils.h"
 #include "sha-simulation-utils/shape_function_utils.h"
@@ -99,7 +100,6 @@ void ThermoelasticSim::solve() {
   spdlog::debug("Fvec.mean:{}", Fvec.mean());
   spdlog::debug("compute(K_spMat_) U");
   // solver_.compute(K_spMat_);
-  LOG_SOLVER
   INIT_SOLVER(solver_init, K_spMat_);
   spdlog::debug("solve U");
   // U_ = solver_.solve(F_);

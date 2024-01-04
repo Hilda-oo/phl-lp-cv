@@ -36,7 +36,7 @@ void ModelAlgorithm::Update(const Eigen::MatrixXd &mat_variables) {
   current_seeds_    = mat_variables.leftCols(3);
   current_radiuses_ = mat_variables.col(3);
   // voronoi_diagram_ =
-      // CreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, 0, sharp_angle_, true);
+  //     CreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, 0, sharp_angle_, true);
   voronoi_diagram_ =
       FastCreateRestrictedVoronoiDiagramFromMesh(mesh_, current_seeds_, sharp_angle_);
 

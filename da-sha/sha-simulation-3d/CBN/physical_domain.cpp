@@ -39,7 +39,7 @@ PhysicalDomain::PhysicalDomain(const MatMesh3 &mesh,
 
   InitializeBoundaryConditions();
 
-  spdlog::info("physical domain constructed" + std::to_string(numV) + " points, " +
+  spdlog::info("physical domain constructed " + std::to_string(numV) + " points, " +
                std::to_string(numF) + " triangles");
 }
 

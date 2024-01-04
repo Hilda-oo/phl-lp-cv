@@ -127,7 +127,10 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
     V  = EvaluateVolume(rhos, dH, mat_variable_to_effected_macro_indices, dV);
     E  = EvaluetaEnergyL(dE, mode);
     dC = EvaluateDC(dCdH, rhos, dH, mat_variable_to_effected_macro_indices);
+#ifndef MECH_ONLY
     dT = EvaluateDT(dTdH, rhos, dH, mat_variable_to_effected_macro_indices);
+
+    spdlog::debug("prepare for mma");
 
     dC /= dC.cwiseAbs().maxCoeff();
     dE /= dE.cwiseAbs().maxCoeff();
@@ -145,16 +148,42 @@ void LpCVTOptimizer::Optimize(Eigen::MatrixXd &mat_seeds_result, Eigen::VectorXd
 
     // Eigen::VectorXd df0dx = dC;
     Eigen::VectorXd df0dx = dC * (1.0 - scalar_E_) + dE * scalar_E_;
-    auto setDofT = simulation_->getSetDofThermalU().array() / simulation_->getContrlPara()->T_limit - 1;
+    auto setDofT =
+        simulation_->getSetDofThermalU().array() / simulation_->getContrlPara()->T_limit - 1;
     Eigen::VectorXd fval =
         (Eigen::VectorXd(num_constrants) << (V / num_variables_ - volfrac_), setDofT).finished();
-        
     Eigen::VectorXd dv_constraint = 1.0 / num_variables_ * dV;
     Eigen::MatrixXd dt_constraint = 1.0 / simulation_->getContrlPara()->T_limit * dT;
     Eigen::MatrixXd dfdx =
         (Eigen::MatrixXd(num_variables_, num_constrants) << dv_constraint, dt_constraint)
             .finished()
             .transpose();
+#else
+    spdlog::debug("prepare for mma");
+
+    dC /= dC.cwiseAbs().maxCoeff();
+    dE /= dE.cwiseAbs().maxCoeff();
+    log::info("mean: dC:{}, dV:{}, dE:{}", dC.mean(), dV.mean(), dE.mean());
+    log::info("C = {:.6}, E = {:.6}, V = {:.3f}", C, E, V);
+
+    if (iteration_idx == 1) {
+      num_constrants = 1;
+      mma            = std::make_shared<MMASolver>(num_variables_, num_constrants);
+    }
+
+    // double f0val = C;
+    // double f0val = C * 10e-12 * (1.0 - scalar_E_) + E * scalar_E_; //cube206
+    double f0val = C * (1.0 - scalar_E_) + E * scalar_E_;
+
+    // Eigen::VectorXd df0dx = dC;
+    Eigen::VectorXd df0dx = dC * (1.0 - scalar_E_) + dE * scalar_E_;
+    Eigen::VectorXd fval =
+        (Eigen::VectorXd(num_constrants) << V / num_variables_ - volfrac_).finished();
+
+    Eigen::VectorXd dv_constraint = 1.0 / num_variables_ * dV;
+    Eigen::MatrixXd dfdx =
+        (Eigen::MatrixXd(num_variables_, num_constrants) << dv_constraint).finished().transpose();
+#endif
     spdlog::info("fval: {}, f0val: {}", fval.sum(), f0val);
 
     Eigen::VectorXd variables_tmp = mat_variables_.transpose().reshaped(num_variables_, 1);
@@ -217,6 +246,8 @@ void LpCVTOptimizer::EvaluateFiniteDifference(
 
   modeling_->UpdateFD(mat_variables_);
   modeling_->ComputeRhosFD();
+
+  int macro_cell_num = simulation_->getMacroCellNum();
   for (int xI = 0; xI < num_seeds_; ++xI) {
     for (int xJ = 0; xJ < num_cols_; ++xJ) {
       int varI = xI * num_cols_ + xJ;
@@ -225,17 +256,17 @@ void LpCVTOptimizer::EvaluateFiniteDifference(
       X_minus_row(xJ) -= finite_difference_step_;
       std::vector<Eigen::VectorXd> rho_minus = modeling_->ComputeRhosFD(
           effected_flags[varI], xI, X_minus_row.head<3>(), X_minus_row(3), finding_vision_);
-      Assert(rho_minus.size() == simulation_->getMacroCellNum());
+      Assert(rho_minus.size() == macro_cell_num);
 
       Eigen::Vector4d X_plus_row = mat_variables_.row(xI).transpose();
       X_plus_row(xJ) += finite_difference_step_;
       std::vector<Eigen::VectorXd> rho_plus = modeling_->ComputeRhosFD(
           effected_flags[varI], xI, X_plus_row.head<3>(), X_plus_row(3), finding_vision_);
-      Assert(rho_plus.size() == simulation_->getMacroCellNum());
+      Assert(rho_plus.size() == macro_cell_num);
 
-      mat_varibale_to_effected_macro_indices[varI].resize(simulation_->getMacroCellNum());
+      mat_varibale_to_effected_macro_indices[varI].resize(macro_cell_num);
       int cnt = 0;
-      for (int macI = 0; macI < simulation_->getMacroCellNum(); ++macI) {
+      for (int macI = 0; macI < macro_cell_num; ++macI) {
         if (effected_flags[varI](macI)) {
           mat_varibale_to_effected_macro_indices[varI](cnt++) = macI;
         }
@@ -247,8 +278,9 @@ void LpCVTOptimizer::EvaluateFiniteDifference(
       for (int i = 0; i < mat_varibale_to_effected_macro_num[varI]; ++i) {
         int macI    = mat_varibale_to_effected_macro_indices[varI](i);
         dH[varI][i] = (rho_plus[macI] - rho_minus[macI]) / (2 * finite_difference_step_);
-        Assert(dH[varI][i].size() ==
-               simulation_->getNestedCells().at(macI).tetrahedrons.NumTetrahedrons());
+        Assert(
+            dH[varI][i].size() ==
+            simulation_->nested_background_->nested_cells_.at(macI).tetrahedrons.NumTetrahedrons());
       }
     }
     // ++show_progress;
@@ -295,7 +327,7 @@ Eigen::VectorXd LpCVTOptimizer::EvaluateDC(
   auto macId2tetsId = simulation_->getMacIdMaptetsId();
   for (int macI = 0; macI < macN; ++macI) {
     const int num_tetrahedrons =
-        simulation_->getNestedCells().at(macI).tetrahedrons.NumTetrahedrons();
+        simulation_->nested_background_->nested_cells_.at(macI).tetrahedrons.NumTetrahedrons();
     dCdH[macI].resize(num_tetrahedrons);
 
     Eigen::VectorXi simId = macId2tetsId[macI];
@@ -329,7 +361,7 @@ Eigen::MatrixXd LpCVTOptimizer::EvaluateDT(
   auto macId2tetsId = simulation_->getMacIdMaptetsId();
   for (int macI = 0; macI < macN; ++macI) {
     const int num_tetrahedrons =
-        simulation_->getNestedCells().at(macI).tetrahedrons.NumTetrahedrons();
+        simulation_->nested_background_->nested_cells_.at(macI).tetrahedrons.NumTetrahedrons();
     dTdH[macI].resize(num_tetrahedrons, setdofNum);
 
     Eigen::VectorXi simId = macId2tetsId[macI];

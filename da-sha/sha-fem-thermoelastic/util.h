@@ -6,9 +6,34 @@
 namespace da::sha {
 using fs_path = boost::filesystem::path;
 
-#define INIT_SOLVER(solver_name, A)                                            \
-  Eigen::CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver_name;        \
-  solver_name.compute(A)
+#ifdef  USE_AMGCL
+#ifdef  USE_AMGCL_CUDA
+#define LOG_SOLVER spdlog::info("using AMGCL CUDA solver");
+#else
+#define LOG_SOLVER spdlog::info("using AMGCL solver");
+#endif
+
+#elif USE_SUITESPARSE
+#define LOG_SOLVER spdlog::info("using SutieSparse solver");
+#else
+#define LOG_SOLVER spdlog::info("using Eigen build-in solver!");
+#endif
+
+#ifdef  USE_AMGCL
+#ifdef USE_AMGCL_CUDA
+#define INIT_SOLVER(solver_name, A)  AmgclCuda<double> solver_name(A)
+#else
+#define INIT_SOLVER(solver_name, A)  Amgcl<double> solver_name(A)
+#endif
+#elif USE_SUITESPARSE
+#define INIT_SOLVER(solver_name,A) \
+        Eigen::CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver_name;    \
+                solver_name.compute(A)
+#else
+#define INIT_SOLVER(solver_name,A) \
+                Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> solver_name;   \
+                solver_name.compute(A)
+#endif
 
 template <typename Scalar>
 inline std::vector<Eigen::Triplet<Scalar>>

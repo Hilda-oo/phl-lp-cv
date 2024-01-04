@@ -70,7 +70,7 @@ public:
     Eigen::MatrixXd TV;
     Eigen::MatrixXi TT;
     // get TV, TT and the relationship of tets with macro cells from nested_background_mesh_
-    spdlog::debug("process NestedBackgound Mesh");
+    spdlog::debug("process NestedBackground Mesh");
     processNestedBackgoundMesh(TV, TT);
     // spdlog::debug("process Neighbors");
     // processNeighbors(TV, TT, p_para->r_min);
@@ -141,6 +141,7 @@ public:
 
  private:
   void preCompute() {
+    spdlog::debug("simulate preCompute");
     i_dFth_dT_ =
         Eigen::KroneckerProduct(sp_thermal_sim_->GetMapEleId2DofsMat(),
                                 Eigen::VectorXi::Ones(sp_therMech_sim_->Get_DOFS_EACH_ELE()))

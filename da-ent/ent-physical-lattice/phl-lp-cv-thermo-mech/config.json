@@ -1,13 +1,13 @@
 {
-  "OptimizationExample": "shelf-bracket","//": "USER DEFINED project name",
-  "level": "info",
+  "OptimizationExample": "femurv2","//": "USER DEFINED project name",
+  "level": "debug",
   "path": {
-    "outputPath": "/home/oo/project/vscode/designauto/exe/Workplace/results/thermo-elastic/shelf-bracket",
-    "meshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/input/Shelf-Bracket-refined.obj",
-    "seedsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/seed-100.txt",
-    "backgroundCellsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/macro",
-    "cellTetsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/tet",
-    "cellPolyhedronPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/shelf-bracket/polyhedrons"
+    "outputPath": "/home/oo/project/vscode/designauto/exe/Workplace/results/thermo-elastic/femurv2",
+    "meshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/input/femurv2.obj",
+    "seedsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/seed-500.txt",
+    "backgroundCellsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/macro",
+    "cellTetsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/tet",
+    "cellPolyhedronPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/polyhedrons"
   },  
   "material": {
     "youngs_modulus": 2.1e11,  "//": "Young's modulus",
@@ -22,10 +22,10 @@
       "max": 0.65
     },
     "shell": 0.03,"//":"shell thickness",
-    "cells": 1946,"//":"macro cell number"
+    "cells": 2001,"//":"macro cell number"
   },
   "topology": {
-    "E": 0.2,"//":"weighted value",
+    "E": 0.1,"//":"weighted value",
     "max_loop": 100,"//": "Maximum number of iterations for topology optimization",
     "volfrac": 0.3,"//": "0~1, Volume ratio restriction",
     "penal": 3.0,"//": "Useless",
@@ -40,16 +40,21 @@
     "//": "NBC: Neumann boundary condition; DBC: Dirichlet boundary condition",
     "NBC": [
       {
-        "min": [0.34, -0.01, 0.90],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
-        "max": [0.35, 1.01, 1.01],"//": "0~1",
-        "val": [-1e8, 0.0, 0],"//": "Pa, The z direction is subject to a -1e8 load"
+        "min": [-0.01, 0.98, -0.01],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
+        "max": [1.01, 1.01, 1.01],"//": "0~1",
+        "val": [0, -1e8, 0],"//": "Pa, The z direction is subject to a -1e8 load"
+      },
+      {
+        "min": [0.1, 0.85, 0.15],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
+        "max": [0.4, 0.95, 0.4],"//": "0~1",
+        "val": [0, 1e8, 0],"//": "Pa, The z direction is subject to a -1e8 load"
       }
 
     ],
     "DBC": [
       {
         "min": [-0.01, -0.01, -0.01],
-        "max": [1.01, 1.01, 0.01],
+        "max": [1.01, 0.01, 1.01],
         "dir": [1, 1, 1],"//": "0 or 1, indicates whether xyz directions are fixed"
       }
     ]
@@ -59,12 +64,7 @@
       {
         "min": [0.15, 0.45, 0.25],
         "max": [0.18, 0.55, 0.3],
-        "heat_flux": 0.335e1, "//": "W, >=0,18.355 for 324"
-      },
-      {
-        "min": [0.15, 0.45, 0.7],
-        "max": [0.20, 0.55, 0.75],
-        "heat_flux": 0.335e1, "//": "W, >=0"
+        "heat_flux": 1e-10, "//": "W, >=0,18.355 for 324"
       }
     ],
     "DBC": [

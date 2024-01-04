@@ -34,13 +34,15 @@ void ThermoelasticWrapper::simulate(Eigen::VectorXd p_rhos, Eigen::VectorXd &dc_
   std::vector<int> v_dof(sp_thermal_sim_->set_dofs_to_load_.begin(),
                          sp_thermal_sim_->set_dofs_to_load_.end());
   spdlog::debug("end Precompute");
-
+#ifndef MECH_ONLY
   // process material interpolation before the simulation
   sp_thermal_sim_->setMatrialTC(CalLambda_Vec(p_rhos, lambda_min, lambda0, sp_para_->R_lambda));
+#endif
   Eigen::VectorXd p_E_vec    = CalE_Vec(p_rhos, E_min, E0_m, sp_para_->R_E);
   Eigen::VectorXd p_beta_vec = CalBeta_Vec(p_rhos, E0_m, alpha0, sp_para_->R_beta);
   sp_therMech_sim_->setMaterialParam(p_E_vec, p_beta_vec);
-  // simulation
+// simulation
+#ifndef MECH_ONLY
   sp_thermal_sim_->simulation();
   Eigen::VectorXd T = sp_thermal_sim_->U_;
   int size          = T.size();
@@ -56,16 +58,18 @@ void ThermoelasticWrapper::simulate(Eigen::VectorXd p_rhos, Eigen::VectorXd &dc_
   spdlog::info("||Fth|| / ||Fm||: {}, ||Fm||: {}, ||Fth||: {}",
                sp_therMech_sim_->Fth_.norm() / sp_therMech_sim_->load_.norm(),
                sp_therMech_sim_->load_.norm(), sp_therMech_sim_->Fth_.norm());
+#endif
+
   sp_therMech_sim_->simulation();
 
   // sensitivity
   // compliance
   C = EvaluateEnergyC(p_rhos, E_min, E0_m, alpha0, lambda_min, lambda0, dc_drho);
   // constrain
-
+#ifndef MECH_ONLY
   // dT_drho
   dT_drho = EvaluateTemperatureConstrain(p_rhos, lambda_min, lambda0, v_dof);
-
+#endif
   rhos_ = p_rhos;
 }
 
@@ -75,14 +79,14 @@ double ThermoelasticWrapper::EvaluateEnergyC(const Eigen::VectorXd &p_rhos, doub
   spdlog::debug("compute dCdH");
   Eigen::VectorXd ce(sp_therMech_sim_->nEle_);
   oneapi::tbb::parallel_for(0, static_cast<int>(sp_therMech_sim_->nEle_), 1, [&](int i) {
-  // for (int i = 0; i < sp_therMech_sim_->nEle_; ++i) {
-    Eigen::VectorXd Ue            = sp_therMech_sim_->U_(sp_therMech_sim_->eDof_[i]);
-    ce(i)                         = Ue.transpose() * sp_therMech_sim_->eleKe_[i] * Ue;
+    // for (int i = 0; i < sp_therMech_sim_->nEle_; ++i) {
+    Eigen::VectorXd Ue = sp_therMech_sim_->U_(sp_therMech_sim_->eDof_[i]);
+    ce(i)              = Ue.transpose() * sp_therMech_sim_->eleKe_[i] * Ue;
     //会导致运行时间变长
     // Eigen::VectorXi dofs_in_ele_i = sp_therMech_sim_->GetMapEleId2DofsVec()[i];
     // Eigen::VectorXd Ue            = sp_therMech_sim_->U_(dofs_in_ele_i);
     // ce(i)                         = Ue.transpose() * sp_therMech_sim_->GetElementK(i) * Ue;
-  // }
+    // }
   });
 
   spdlog::debug("sum");
@@ -92,8 +96,7 @@ double ThermoelasticWrapper::EvaluateEnergyC(const Eigen::VectorXd &p_rhos, doub
   // lambda_m
   Eigen::VectorXd lambda_m = -sp_therMech_sim_->U_;
   // dFth_drho
-  Eigen::SparseMatrix<double> dFth_drho(sp_therMech_sim_->nEle_,
-                                        sp_therMech_sim_->nDof_);
+  Eigen::SparseMatrix<double> dFth_drho(sp_therMech_sim_->nEle_, sp_therMech_sim_->nDof_);
   spdlog::debug("每个元素dFth_drho");
   //每个元素dFth_drho 12x1
   Eigen::VectorXd v_dFth_drho(i_dFth_drho_.size());
@@ -102,7 +105,8 @@ double ThermoelasticWrapper::EvaluateEnergyC(const Eigen::VectorXd &p_rhos, doub
     // double Te                     = sp_thermal_sim_->U_(dofs_th).mean();
     // Eigen::VectorXd ele_dFth_drho = CalDBetaDrho(p_rhos(i), E0_m, alpha0, sp_para_->R_beta) *
     //                                 (Te - sp_para_->T_ref) *
-    //                                 sp_therMech_sim_->GetElementB(i).transpose() * Inted_;  // 12x1
+    //                                 sp_therMech_sim_->GetElementB(i).transpose() * Inted_;  //
+    //                                 12x1
     double Te                     = sp_thermal_sim_->U_(sp_thermal_sim_->eDof_[i]).mean();
     Eigen::VectorXd ele_dFth_drho = CalDBetaDrho(p_rhos(i), E0_m, alpha0, sp_para_->R_beta) *
                                     (Te - sp_para_->T_ref) *
@@ -115,15 +119,13 @@ double ThermoelasticWrapper::EvaluateEnergyC(const Eigen::VectorXd &p_rhos, doub
 
   // dFth^T_dT
   spdlog::debug("dFth^T_dT");
-  Eigen::SparseMatrix<double> dFth_dT(sp_thermal_sim_->nDof_,
-                                      sp_therMech_sim_->nDof_);
+  Eigen::SparseMatrix<double> dFth_dT(sp_thermal_sim_->nDof_, sp_therMech_sim_->nDof_);
   Eigen::VectorXd v_dFth_dT(i_dFth_dT_.size());
   for (int i = 0; i < sp_thermal_sim_->nEle_; ++i) {
-    double beta_rho = CalBeta(p_rhos(i), E0_m, alpha0, sp_para_->R_beta);
-    Eigen::MatrixXd ele_dFth_dT =
-        Eigen::VectorXd::Ones(sp_thermal_sim_->eleDofNum_) * 1.0 /
-        sp_thermal_sim_->eleDofNum_ * beta_rho *
-        (sp_therMech_sim_->eleBe_[i].transpose() * Inted_).transpose();
+    double beta_rho             = CalBeta(p_rhos(i), E0_m, alpha0, sp_para_->R_beta);
+    Eigen::MatrixXd ele_dFth_dT = Eigen::VectorXd::Ones(sp_thermal_sim_->eleDofNum_) * 1.0 /
+                                  sp_thermal_sim_->eleDofNum_ * beta_rho *
+                                  (sp_therMech_sim_->eleBe_[i].transpose() * Inted_).transpose();
     assert(ele_dFth_dT.rows() == 4 && ele_dFth_dT.cols() == 12);
     v_dFth_dT(Eigen::seqN(i * ele_dFth_dT.size(), ele_dFth_dT.size())) = ele_dFth_dT.reshaped();
   }
@@ -149,14 +151,15 @@ double ThermoelasticWrapper::EvaluateEnergyC(const Eigen::VectorXd &p_rhos, doub
   spdlog::debug("lambda_t_Mul_dKt_drho_Mul_T");
   Eigen::VectorXd lambda_t_Mul_Kt_Mul_Te(sp_thermal_sim_->nEle_);
   for (int i = 0; i < sp_thermal_sim_->nEle_; ++i) {
-    Eigen::VectorXd Te            = sp_thermal_sim_->U_(sp_thermal_sim_->eDof_[i]);
-    Eigen::VectorXd lambda_t_e    = lambda_t(sp_thermal_sim_->eDof_[i]);
-    lambda_t_Mul_Kt_Mul_Te(i)     = lambda_t_e.transpose() * sp_thermal_sim_->eleKe_[i] * Te;
-    //too slow
-    // Eigen::VectorXi dofs_in_ele_i = sp_thermal_sim_->GetMapEleId2DofsVec()[i];
-    // Eigen::VectorXd Te            = sp_thermal_sim_->U_(dofs_in_ele_i);
-    // Eigen::VectorXd lambda_t_e    = lambda_t(dofs_in_ele_i);
-    // lambda_t_Mul_Kt_Mul_Te(i)     = lambda_t_e.transpose() * sp_thermal_sim_->GetElementK(i) * Te;
+    Eigen::VectorXd Te         = sp_thermal_sim_->U_(sp_thermal_sim_->eDof_[i]);
+    Eigen::VectorXd lambda_t_e = lambda_t(sp_thermal_sim_->eDof_[i]);
+    lambda_t_Mul_Kt_Mul_Te(i)  = lambda_t_e.transpose() * sp_thermal_sim_->eleKe_[i] * Te;
+    // too slow
+    //  Eigen::VectorXi dofs_in_ele_i = sp_thermal_sim_->GetMapEleId2DofsVec()[i];
+    //  Eigen::VectorXd Te            = sp_thermal_sim_->U_(dofs_in_ele_i);
+    //  Eigen::VectorXd lambda_t_e    = lambda_t(dofs_in_ele_i);
+    //  lambda_t_Mul_Kt_Mul_Te(i)     = lambda_t_e.transpose() * sp_thermal_sim_->GetElementK(i) *
+    //  Te;
   }
   Eigen::VectorXd lambda_t_Mul_dKt_drho_Mul_T =
       CalDlambdaDrho_Vec(p_rhos, lambda_min, lambda0, sp_para_->R_lambda).array() *
@@ -176,6 +179,7 @@ auto ThermoelasticWrapper::EvaluateTemperatureConstrain(const Eigen::VectorXd &p
   std::map<int, std::vector<LimitedDof>> map_ele2Limit;
   Eigen::MatrixXi ele2dof_map = sp_thermal_sim_->GetMapEleId2DofsMat();
   //      loop ele2dof_map
+  spdlog::debug("loop ele2dof_map");
   for (int i = 0; i < ele2dof_map.rows(); ++i) {
     for (int j = 0; j < ele2dof_map.cols(); ++j) {
       for (int k = 0; k < v_dof.size(); ++k) {
@@ -189,43 +193,67 @@ auto ThermoelasticWrapper::EvaluateTemperatureConstrain(const Eigen::VectorXd &p
       }
     }
   }
-  auto CalDKth_Mul_T__For_DTi_Drhoj = [&](int rho_i) -> Eigen::SparseVector<double> {
-    Eigen::VectorXi dofs_in_ele = sp_thermal_sim_->eDof_[rho_i];
+  // auto CalDKth_Mul_T_For_DTi_Drhoj = [&](int rho_i) -> Eigen::SparseVector<double> {
+  //   Eigen::VectorXi dofs_in_ele = sp_thermal_sim_->eDof_[rho_i];
+  //   Eigen::VectorXd ele_T       = sp_thermal_sim_->U_(dofs_in_ele);
+  //   Eigen::SparseVector<double> sp_dKth_Mul_T(sp_thermal_sim_->nDof_);
+  //   Eigen::VectorXd dKe_th_Mul_T =
+  //       CalDlambdaDrho(p_rhos(rho_i), lambda_min, lambda0, sp_para_->R_lambda) *
+  //       sp_thermal_sim_->eleKe_[rho_i] / sp_thermal_sim_->material_int_TC_(rho_i) * ele_T;
+
+  //   //too slow
+  //   // Eigen::VectorXi dofs_in_ele = sp_thermal_sim_->GetMapEleId2DofsVec()[rho_i];
+  //   // Eigen::VectorXd ele_T       = sp_thermal_sim_->U_(dofs_in_ele);
+  //   // Eigen::SparseVector<double> sp_dKth_Mul_T(sp_thermal_sim_->nDof_);
+  //   // Eigen::VectorXd dKe_th_Mul_T =
+  //   //     CalDlambdaDrho(p_rhos(rho_i), lambda_min, lambda0, sp_para_->R_lambda) *
+  //   //     sp_thermal_sim_->GetElementK(rho_i) / sp_thermal_sim_->material_int_TC_(rho_i) *
+  //   ele_T; for (int i = 0; i < dofs_in_ele.size(); ++i) {
+  //     sp_dKth_Mul_T.coeffRef(dofs_in_ele(i)) = dKe_th_Mul_T(i);
+  //   }
+  //   return sp_dKth_Mul_T;
+  // };
+  // auto CalDTi_Drhoj = [&](int Tdof, const Eigen::SparseVector<double> &sp_dKth_Mul_T) -> double {
+  //   Eigen::VectorXd Li = Eigen::VectorXd::Zero(sp_dKth_Mul_T.rows());
+  //   Li(Tdof)           = -1;
+  //   for (auto dof_value : sp_thermal_sim_->v_dofs_to_set_) {
+  //     auto [dof, value] = dof_value;
+  //     Li(dof)           = sp_thermal_sim_->K_spMat_.coeff(dof, dof) * value;
+  //   }
+  //   Eigen::VectorXd lambda_i = sp_thermal_sim_->solver_.solve(Li);
+  //   return lambda_i.transpose() * sp_dKth_Mul_T;
+  // };
+  Eigen::MatrixXd dT =
+      Eigen::MatrixXd::Zero(sp_thermal_sim_->nEle_, sp_thermal_sim_->set_dofs_to_load_.size());
+  spdlog::debug("loop dT");
+  // for (auto it = map_ele2Limit.begin(); it != map_ele2Limit.end(); ++it) {
+  //   auto [ele_id, v_limited] = *it;
+  //   auto sp_dKth_Mul_T       = CalDKth_Mul_T_For_DTi_Drhoj(ele_id);
+  //   for (auto &limited : v_limited) {
+  //     dT(ele_id, limited.idx_of_load_dof) = CalDTi_Drhoj(limited.dof, sp_dKth_Mul_T);
+  //   }
+  // }
+
+  for (auto it = map_ele2Limit.begin(); it != map_ele2Limit.end(); ++it) {
+    auto [ele_id, v_limited]    = *it;
+    Eigen::VectorXi dofs_in_ele = sp_thermal_sim_->eDof_[ele_id];
     Eigen::VectorXd ele_T       = sp_thermal_sim_->U_(dofs_in_ele);
     Eigen::SparseVector<double> sp_dKth_Mul_T(sp_thermal_sim_->nDof_);
     Eigen::VectorXd dKe_th_Mul_T =
-        CalDlambdaDrho(p_rhos(rho_i), lambda_min, lambda0, sp_para_->R_lambda) *
-        sp_thermal_sim_->eleKe_[rho_i] / sp_thermal_sim_->material_int_TC_(rho_i) * ele_T;
-
-    //too slow
-    // Eigen::VectorXi dofs_in_ele = sp_thermal_sim_->GetMapEleId2DofsVec()[rho_i];
-    // Eigen::VectorXd ele_T       = sp_thermal_sim_->U_(dofs_in_ele);
-    // Eigen::SparseVector<double> sp_dKth_Mul_T(sp_thermal_sim_->nDof_);
-    // Eigen::VectorXd dKe_th_Mul_T =
-    //     CalDlambdaDrho(p_rhos(rho_i), lambda_min, lambda0, sp_para_->R_lambda) *
-    //     sp_thermal_sim_->GetElementK(rho_i) / sp_thermal_sim_->material_int_TC_(rho_i) * ele_T;
+        CalDlambdaDrho(p_rhos(ele_id), lambda_min, lambda0, sp_para_->R_lambda) *
+        sp_thermal_sim_->eleKe_[ele_id] / sp_thermal_sim_->material_int_TC_(ele_id) * ele_T;
     for (int i = 0; i < dofs_in_ele.size(); ++i) {
       sp_dKth_Mul_T.coeffRef(dofs_in_ele(i)) = dKe_th_Mul_T(i);
     }
-    return sp_dKth_Mul_T;
-  };
-  auto CalDTi_Drhoj = [&](int Tdof, const Eigen::SparseVector<double> &sp_dKth_Mul_T) -> double {
-    Eigen::VectorXd Li = Eigen::VectorXd::Zero(sp_dKth_Mul_T.rows());
-    Li(Tdof)           = -1;
-    for (auto dof_value : sp_thermal_sim_->v_dofs_to_set_) {
-      auto [dof, value] = dof_value;
-      Li(dof)           = sp_thermal_sim_->K_spMat_.coeff(dof, dof) * value;
-    }
-    Eigen::VectorXd lambda_i = sp_thermal_sim_->solver_.solve(Li);
-    return lambda_i.transpose() * sp_dKth_Mul_T;
-  };
-  Eigen::MatrixXd dT = Eigen::MatrixXd::Zero(sp_thermal_sim_->nEle_,
-                                             sp_thermal_sim_->set_dofs_to_load_.size());
-  for (auto it = map_ele2Limit.begin(); it != map_ele2Limit.end(); ++it) {
-    auto [ele_id, v_limited] = *it;
-    auto sp_dKth_Mul_T       = CalDKth_Mul_T__For_DTi_Drhoj(ele_id);
     for (auto &limited : v_limited) {
-      dT(ele_id, limited.idx_of_load_dof) = CalDTi_Drhoj(limited.dof, sp_dKth_Mul_T);
+      Eigen::VectorXd Li = Eigen::VectorXd::Zero(sp_dKth_Mul_T.rows());
+      Li(limited.dof)    = -1;
+      for (auto dof_value : sp_thermal_sim_->v_dofs_to_set_) {
+        auto [dof, value] = dof_value;
+        Li(dof)           = sp_thermal_sim_->K_spMat_.coeff(dof, dof) * value;
+      }
+      Eigen::VectorXd lambda_i            = sp_thermal_sim_->solver_.solve(Li);
+      dT(ele_id, limited.idx_of_load_dof) = lambda_i.transpose() * sp_dKth_Mul_T;
     }
   }
   return dT;
@@ -247,7 +275,7 @@ auto ThermoelasticWrapper::getCellStress() -> std::vector<std::vector<double>> {
     // stress             = Di * sp_therMech_sim_->GetElementB(eI) * Ue -
     //          Di * sp_therMech_sim_->thermal_expansion_coefficient_ * (Te - sp_para_->T_ref) *
     //              (Eigen::VectorXd(6) << 1, 1, 1, 0, 0, 0).finished().transpose();
-    stress             = Di * sp_therMech_sim_->eleBe_[eI] * Ue -
+    stress = Di * sp_therMech_sim_->eleBe_[eI] * Ue -
              Di * sp_therMech_sim_->thermal_expansion_coefficient_ * (Te - sp_para_->T_ref) *
                  (Eigen::VectorXd(6) << 1, 1, 1, 0, 0, 0).finished().transpose();
     stress_vec[eI].resize(3);

@@ -1,5 +1,6 @@
 #include <igl/write_triangle_mesh.h>
 #include <spdlog/common.h>
+#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <boost/progress.hpp>
 #include <iostream>
@@ -58,6 +59,7 @@ class Worker {
                                                              p_TC, p_TEC, p_mechDBC, p_mechNBC,
                                                              p_thermalDBC, p_thermalNBC, p_para);
     // init model algo
+    spdlog::debug("init model algo");
     model_algorithm_ =
         std::make_shared<ModelAlgorithm>(mesh_, *nested_background_mesh_, true, shell_thickness);
   }
