@@ -1,0 +1,78 @@
+{
+  "OptimizationExample": "femurv2","//": "USER DEFINED project name",
+  "level": "debug",
+  "path": {
+    "outputPath": "/home/oo/project/vscode/designauto/exe/Workplace/results/thermo-elastic/femurv2",
+    "meshFilePath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/input/femurv2.obj",
+    "seedsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/seed-500.txt",
+    "backgroundCellsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/macro",
+    "cellTetsPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/tet",
+    "cellPolyhedronPath": "/home/oo/project/vscode/designauto/exe/Workplace/assets/femurv2/polyhedrons"
+  },  
+  "material": {
+    "youngs_modulus": 2.1e11,  "//": "Young's modulus",
+    "poisson_ratio": 0.3, "//": "Poisson's ratio",
+    "thermal_conductivity":43, "//unit": "W/(m*K)",
+    "thermal_expansion_coefficient": 1.21e-5, "//unit": "1/K"
+  },
+  "model": {
+    "radius": {
+      "init": 0.55,"//":"initial radius of beams",
+      "min": 0.45,
+      "max": 0.65
+    },
+    "shell": 0.03,"//":"shell thickness",
+    "cells": 2001,"//":"macro cell number"
+  },
+  "topology": {
+    "E": 0.1,"//":"weighted value",
+    "max_loop": 100,"//": "Maximum number of iterations for topology optimization",
+    "volfrac": 0.3,"//": "0~1, Volume ratio restriction",
+    "penal": 3.0,"//": "Useless",
+    "r_min": 1.05,"//": "Convolution kernel size, less than 1 will result in checkerboard phenomenon",
+    "T_ref": 312,"//": "K, Reference/Environment temperature",
+    "T_limit": 325,"//": "K, Maximum temperature limit in optimization",
+    "R_E": 28,"//": "1~28, The higher the value, the closer the density is to 0 or 1",
+    "R_lambda": 28,"//": "1~28, The higher the value, the closer the density is to 0 or 1",
+    "R_beta":0,"//": "Useless"
+  },
+  "mechanical_boundary_condition":{ "//": "A  [min[0],max[0]] * [min[1],max[1]] * [min[2],max[2]] rectangle boundary",
+    "//": "NBC: Neumann boundary condition; DBC: Dirichlet boundary condition",
+    "NBC": [
+      {
+        "min": [-0.01, 0.98, -0.01],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
+        "max": [1.01, 1.01, 1.01],"//": "0~1",
+        "val": [0, -1e8, 0],"//": "Pa, The z direction is subject to a -1e8 load"
+      },
+      {
+        "min": [0.1, 0.85, 0.15],"//": "0~1, A [min[0],max[0]] line, because y and z are the same",
+        "max": [0.4, 0.95, 0.4],"//": "0~1",
+        "val": [0, 1e8, 0],"//": "Pa, The z direction is subject to a -1e8 load"
+      }
+
+    ],
+    "DBC": [
+      {
+        "min": [-0.01, -0.01, -0.01],
+        "max": [1.01, 0.01, 1.01],
+        "dir": [1, 1, 1],"//": "0 or 1, indicates whether xyz directions are fixed"
+      }
+    ]
+  },
+  "thermal_boundary_condition": {
+    "NBC": [
+      {
+        "min": [0.15, 0.45, 0.25],
+        "max": [0.18, 0.55, 0.3],
+        "heat_flux": 1e-10, "//": "W, >=0,18.355 for 324"
+      }
+    ],
+    "DBC": [
+      {
+        "min": [0.99, -0.01, -0.01],
+        "max": [1.01, 1.01, 1.01],
+        "temperature": 312, "//": "K, fixed temperature in DBC"
+      }
+    ]
+  }
+}

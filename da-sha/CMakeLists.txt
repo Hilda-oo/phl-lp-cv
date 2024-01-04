@@ -27,3 +27,31 @@ target_compile_definitions(sha-topology-optimization-3d PUBLIC USE_SUITESPARSE)
 target_compile_definitions(sha-topology-optimization-3d PUBLIC DEBUG)
 # target_compile_definitions(sha-topology-optimization-3d PUBLIC WRITE_TENSOR_IN_LOOP)# for debug
 
+AddShaProject(sha-fem-thermoelastic sha-base-framework sha-io-foundation TBB::tbb amgcl::amgcl sha-simulation-utils)
+# chose linear solver
+option(MECH_ONLY "Only mech simulate" OFF)
+option(ENABLE_AMGCL "Use AMGCL" OFF)
+if (ENABLE_AMGCL)
+    option(ENABLE_AMGCL_CUDA "use Cuda to speed up AMGCL" ON)
+else ()
+    option(ENABLE_SUITESPARSE "Use SuiteSparse" ON)
+endif ()
+
+if (ENABLE_SUITESPARSE)
+    # SuiteSparse
+    find_package(SuiteSparse REQUIRED)
+    target_compile_definitions(sha-fem-thermoelastic PUBLIC USE_SUITESPARSE)
+endif ()
+
+if (ENABLE_AMGCL)
+    # AMGCL
+    find_package(amgcl REQUIRED)
+    target_compile_definitions(sha-fem-thermoelastic PUBLIC USE_AMGCL)
+    if (ENABLE_AMGCL_CUDA)
+        find_package(CUDA REQUIRED)
+        find_package(CUDAToolkit REQUIRED)
+        target_compile_definitions(sha-fem-thermoelastic PUBLIC USE_AMGCL_CUDA)
+        target_compile_options(sha-fem-thermoelastic PRIVATE -Xcompiler -fopenmp)
+    endif ()
+endif ()
+

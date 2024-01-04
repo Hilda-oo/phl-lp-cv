@@ -3,6 +3,7 @@
 
 #include <fmt/format.h>
 #include <igl/write_triangle_mesh.h>
+#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 
 #include "sha-base-framework/declarations.h"
@@ -71,10 +72,12 @@ class Worker {
     physical_domain_->WriteNBCToVtk(WorkingResultDirectoryPath() / "NBC.vtk");
 
     // init model algo
+    spdlog::debug("init model algo");
     model_algorithm_ =
         std::make_shared<ModelAlgorithm>(mesh_, *nested_background_mesh_, true, shell_thickness);
 
     // init CBN background
+    spdlog::debug("init simulator_");
     simulator_ = std::make_shared<sha::CBNSimulator>(YM1, YM0, PR, penaltyYM, physical_domain_,
                                                      nested_background_mesh_);
 
@@ -99,6 +102,7 @@ class Worker {
     Eigen::AlignedBox3d opt_domain;
     opt_domain.min() = simulator_->node.colwise().minCoeff();
     opt_domain.max() = simulator_->node.colwise().maxCoeff();
+    spdlog::debug("anisotropic_mat_wrapper_");
     anisotropic_mat_wrapper_ = std::make_shared<da::AnisotropicMatWrapper>();
 
     switch (mode) {
@@ -117,6 +121,7 @@ class Worker {
     Eigen::VectorXd radiuses;
 
     std::vector<double> sequential_E, sequential_V, sequential_C;
+    spdlog::debug("Optimize");
 
     optimizer_->Optimize(
         mat_seeds, radiuses, num_iterations, mode,
@@ -155,8 +160,8 @@ class Worker {
     // output optimized model in rods
     // Eigen::Vector3i num_xyz_samples(300, 300, 300);
     // Eigen::Vector3i num_xyz_samples(200, 200, 200);  //for 2-box-refine
-    // Eigen::Vector3i num_xyz_samples(1000, 1000, 1000);  //max num for 2-box-refine
-    Eigen::Vector3i num_xyz_samples(120, 120, 120);  //for cube
+    Eigen::Vector3i num_xyz_samples(5000, 5000, 5000);  //max num for 2-box-refine
+    // Eigen::Vector3i num_xyz_samples(120, 120, 120);  //for cube
     // log::info("samples x: {}, y: {}, z: {}", num_xyz_samples.x(), num_xyz_samples.y(),
     //           num_xyz_samples.z());
     Eigen::AlignedBox3d sdf_domain_bbox = opt_domain;
@@ -214,6 +219,7 @@ void GeneratePhysicalLpNormVoronoiLatticeStructure(std::string model_file_name, 
   // int mode = 1; // 0 for iso, 1 for fem, 2 for top density, 3 for top stress
 
   const int p = 6;
+  spdlog::set_level(log::level::level_enum::debug);
 
   log::info("Algo is working on path '{}'", base_path.string());
 
@@ -299,12 +305,4 @@ void GeneratePhysicalLpNormVoronoiLatticeStructure(std::string model_file_name, 
   log::info("Optimizing");
   woker.Run(mat_seeds, init_radius, radius_range, scalar_E, volfrac, num_iterations, beams_out_path,
             seeds_out_path, mode);
-}
-
-void GenerateSampleSeed(int num_seed, std::string model_file, std::string model_name){
-  // da::fs_path path = "femur/input/femur.obj";
-  da::fs_path outpath = model_file;
-  da::fs_path path = outpath / "input" / model_name;
-  da::AnisotropicMatWrapper anisotropicMatWrapper;
-  anisotropicMatWrapper.generateSampleSeedEntry(path, outpath, num_seed);
 }

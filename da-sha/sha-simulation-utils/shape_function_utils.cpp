@@ -344,4 +344,54 @@ void ComputeKeForTet(const Eigen::Matrix<double, 4, 3> &X, const Eigen::Matrix<d
 
   Ke = Vol * (B.transpose() * D * B);
 }
+
+void ComputeHeatKeForTet(const Eigen::Matrix<double, 4, 3> &X,
+                         Eigen::Matrix<double, 4, 4> &heatKe, double &Vol) {
+  heatKe.setZero();
+  Eigen::Matrix<double, 4, 4> H;
+  H.col(0).setOnes();
+  H(Eigen::all, Eigen::seq(1, Eigen::last)) = X;
+  double V6 = H.determinant();
+  Vol = V6 / 6.0;
+  Eigen::Matrix<double, 3, 4> B;
+  ComputeHeatBeForTet(X, B);
+
+  double thermal_conductivity = 1.0;  // for material interpolation
+  heatKe = Vol * B.transpose() * thermal_conductivity * B;
+}
+
+void ComputeHeatBeForTet(const Eigen::Matrix<double, 4, 3> &X,
+                         Eigen::Matrix<double, 3, 4> &Be) {
+  Be.setZero();
+  Eigen::Matrix<double, 4, 4> H;
+  H.col(0).setOnes();
+  H(Eigen::all, Eigen::seq(1, Eigen::last)) = X;
+  double V6 = H.determinant();
+
+  Eigen::Matrix<int, 4, 3> index;
+  index << 1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2;
+
+  Eigen::RowVector4d b;
+  Eigen::RowVector4d c;
+  Eigen::RowVector4d d;
+
+  b(0) = -H(index.row(0), index.row(1)).determinant();
+  b(1) = H(index.row(1), index.row(1)).determinant();
+  b(2) = -H(index.row(2), index.row(1)).determinant();
+  b(3) = H(index.row(3), index.row(1)).determinant();
+
+  c(0) = H(index.row(0), index.row(2)).determinant();
+  c(1) = -H(index.row(1), index.row(2)).determinant();
+  c(2) = H(index.row(2), index.row(2)).determinant();
+  c(3) = -H(index.row(3), index.row(2)).determinant();
+
+  d(0) = -H(index.row(0), index.row(3)).determinant();
+  d(1) = H(index.row(1), index.row(3)).determinant();
+  d(2) = -H(index.row(2), index.row(3)).determinant();
+  d(3) = H(index.row(3), index.row(3)).determinant();
+
+  Be << b, c, d;
+  Be /= V6;
+}
+
 }  // namespace da::sha

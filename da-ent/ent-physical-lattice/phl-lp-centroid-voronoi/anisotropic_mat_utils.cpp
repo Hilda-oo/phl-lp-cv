@@ -1,21 +1,16 @@
 #include "anisotropic_mat_utils.h"
 #include <igl/AABB.h>
-#include <math.h>
+#include <igl/fast_winding_number.h>
 #include <spdlog/spdlog.h>
-#include <algorithm>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <cassert>
-#include <iostream>
+#include <cstddef>
+#include <random>
 #include <string>
 #include <vector>
 #include "Eigen/src/Core/Matrix.h"
-#include "Eigen/src/Eigenvalues/EigenSolver.h"
-#include "igl/in_element.h"
-#include "sha-base-framework/declarations.h"
-#include "sha-base-framework/frame.h"
 #include "sha-io-foundation/data_io.h"
 #include "sha-io-foundation/mesh_io.h"
+#include "sha-surface-mesh/matmesh.h"
+#include "sha-surface-mesh/mesh3.h"
 #include "sha-surface-mesh/sample.h"
 
 namespace da {
@@ -261,6 +256,163 @@ void AnisotropicMatWrapper::generateSampleSeedEntry(const fs_path& mesh_path,
   fs_path base                = WorkingAssetDirectoryPath();
   sha::MatMesh3 mesh          = sha::ReadMatMeshFromOBJ(base / mesh_path);
   Eigen::MatrixXd sample_seed = sha::SamplePointsInMeshVolumeUniformly(mesh, num_seed);
+  sha::WriteMatrixToFile(base / seed_path / fmt::format("seed-{}.txt", sample_seed.rows()),
+                         sample_seed);
+  sha::WritePointsToVtk(base / seed_path / fmt::format("seed-{}.vtk", sample_seed.rows()),
+                        sample_seed);
+  log::info("generate {} seeds successful", sample_seed.rows());
+}
+
+void AnisotropicMatWrapper::generateMixSampleSeedEntry(const fs_path& mesh_path,
+                                                       const fs_path& seed_path, size_t snum,
+                                                       size_t xnum, size_t ynum, size_t znum) {
+  fs_path base       = WorkingAssetDirectoryPath();
+  sha::MatMesh3 mesh = sha::ReadMatMeshFromOBJ(base / mesh_path);
+  Eigen::AlignedBox3d aligned_box;
+  aligned_box.min() = mesh.mat_coordinates.colwise().minCoeff();
+  aligned_box.max() = mesh.mat_coordinates.colwise().maxCoeff();
+  int num_samples   = xnum * ynum * znum + snum;
+
+  Eigen::MatrixXd sample_seed(num_samples, 3);
+  double xMin   = aligned_box.min().x();
+  double xMax   = aligned_box.max().x();
+  double yMin   = aligned_box.min().y();
+  double yMax   = aligned_box.max().y();
+  double zMin   = aligned_box.min().z();
+  double zMax   = aligned_box.max().z();
+  double xShift = xMax - xMin;
+  double yShift = yMax - yMin;
+  double zShift = zMax - zMin;
+  xShift /= 1.0 * (xnum - 1);
+  yShift /= 1.0 * (ynum - 1);
+  zShift /= 1.0 * (znum - 1);
+  spdlog::info("xShift:{}, yShift:{}, zShift:{}", xShift, yShift, zShift);
+
+  igl::FastWindingNumberBVH fwn_bvh;
+  igl::fast_winding_number(mesh.mat_coordinates.template cast<float>().eval(), mesh.mat_faces, 2,
+                           fwn_bvh);
+  int sn = 0;
+  for (index_t i = 0; i < xnum; ++i) {
+    double x = xMin + xShift * i;
+    for (index_t j = 0; j < ynum; ++j) {
+      double y = yMin + yShift * j;
+      for (index_t k = 0; k < znum; ++k) {
+        double z = zMin + zShift * k;
+        Eigen::Vector3d query_point;
+        query_point << x, y, z;
+        sample_seed.row(sn++) = query_point;
+      }
+    }
+  }
+
+  std::uniform_real_distribution<> pos_samplers[3] = {std::uniform_real_distribution<>(xMin, xMax),
+                                                      std::uniform_real_distribution<>(yMin, yMax),
+                                                      std::uniform_real_distribution<>(zMin, zMax)};
+  std::mt19937 random_engine((std::random_device())());
+
+  for (index_t sample_idx = 0; sample_idx < snum; ++sample_idx) {
+    sample_seed.row(sn++) << pos_samplers[0](random_engine), pos_samplers[1](random_engine),
+        pos_samplers[2](random_engine);
+  }
+
+  num_samples = sample_seed.rows();
+  spdlog::info("num-samples:{},sn:{}", num_samples, sn);
+
+  std::vector<Eigen::Vector3d> mat_sample_coordinates;
+  std::map<std::string, bool> flag; 
+#pragma omp parallel for
+  for (index_t sample_idx = 0; sample_idx < num_samples; ++sample_idx) {
+    int num_mismatch_samples = 0;
+    Eigen::MatrixXd query_point(1, 3);
+    query_point.row(0) = sample_seed.row(sample_idx);
+    double w           = fast_winding_number(fwn_bvh, 2, query_point.template cast<float>().eval());
+    double s           = 1. - 2. * std::abs(w);
+    if (s <= 0) {
+      std::string str = std::to_string(query_point(0, 0)) + std::to_string(query_point(0, 1)) + std::to_string(query_point(0, 2));
+      if (!flag.count(str)) {
+        flag[str] = true;
+        mat_sample_coordinates.push_back(query_point.row(0));
+      }
+    }
+  }
+  num_samples = mat_sample_coordinates.size();
+  sample_seed.resize(0, 0);
+  sample_seed.resize(num_samples, 3);
+  sn = 0;
+  for(auto p: mat_sample_coordinates) {
+    sample_seed.row(sn++) = p;
+  }
+
+  sha::WriteMatrixToFile(base / seed_path / fmt::format("seed-{}.txt", sample_seed.rows()),
+                         sample_seed);
+  sha::WritePointsToVtk(base / seed_path / fmt::format("seed-{}.vtk", sample_seed.rows()),
+                        sample_seed);
+  log::info("generate {} seeds successful", sample_seed.rows());
+}
+
+void AnisotropicMatWrapper::generateUniformSampleSeedEntry(const fs_path& mesh_path,
+                                                           const fs_path& seed_path, size_t xnum,
+                                                           size_t ynum, size_t znum) {
+  fs_path base       = WorkingAssetDirectoryPath();
+  sha::MatMesh3 mesh = sha::ReadMatMeshFromOBJ(base / mesh_path);
+  Eigen::AlignedBox3d aligned_box;
+  aligned_box.min() = mesh.mat_coordinates.colwise().minCoeff();
+  aligned_box.max() = mesh.mat_coordinates.colwise().maxCoeff();
+  int num_samples   = xnum * ynum * znum;
+
+  Eigen::MatrixXd sample_seed(num_samples, 3);
+  double xMin   = aligned_box.min().x();
+  double xMax   = aligned_box.max().x();
+  double yMin   = aligned_box.min().y();
+  double yMax   = aligned_box.max().y();
+  double zMin   = aligned_box.min().z();
+  double zMax   = aligned_box.max().z();
+  double xShift = xMax - xMin;
+  double yShift = yMax - yMin;
+  double zShift = zMax - zMin;
+  xShift /= 1.0 * (xnum - 1);
+  yShift /= 1.0 * (ynum - 1);
+  zShift /= 1.0 * (znum - 1);
+  spdlog::info("xShift:{}, yShift:{}, zShift:{}", xShift, yShift, zShift);
+
+  igl::FastWindingNumberBVH fwn_bvh;
+  igl::fast_winding_number(mesh.mat_coordinates.template cast<float>().eval(), mesh.mat_faces, 2,
+                           fwn_bvh);
+  int sn = 0;
+  for (index_t i = 0; i < xnum; ++i) {
+    double x = xMin + xShift * i;
+    for (index_t j = 0; j < ynum; ++j) {
+      double y = yMin + yShift * j;
+      for (index_t k = 0; k < znum; ++k) {
+        double z = zMin + zShift * k;
+        Eigen::Vector3d query_point;
+        query_point << x, y, z;
+        sample_seed.row(sn++) = query_point;
+      }
+    }
+  }
+
+  num_samples = sample_seed.rows();
+  spdlog::info("num-samples:{},sn:{}", num_samples, sn);
+
+  std::vector<Eigen::Vector3d> mat_sample_coordinates(0);
+#pragma omp parallel for
+  for (index_t sample_idx = 0; sample_idx < num_samples; ++sample_idx) {
+    int num_mismatch_samples = 0;
+    Eigen::MatrixXd query_point(1, 3);
+    query_point.row(0) = sample_seed.row(sample_idx);
+    double w           = fast_winding_number(fwn_bvh, 2, query_point.template cast<float>().eval());
+    double s           = 1. - 2. * std::abs(w);
+    if (s <= 0) {
+      mat_sample_coordinates.push_back(query_point.row(0));
+    }
+  }
+  num_samples = mat_sample_coordinates.size();
+  sample_seed.resize(0, 0);
+  sample_seed.resize(num_samples, 3);
+  for (index_t sample_idx = 0; sample_idx < num_samples; ++sample_idx) {
+    sample_seed.row(sample_idx) = mat_sample_coordinates.at(sample_idx);
+  }
   sha::WriteMatrixToFile(base / seed_path / fmt::format("seed-{}.txt", sample_seed.rows()),
                          sample_seed);
   sha::WritePointsToVtk(base / seed_path / fmt::format("seed-{}.vtk", sample_seed.rows()),

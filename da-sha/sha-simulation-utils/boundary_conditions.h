@@ -14,6 +14,14 @@ struct DirichletBC {
         relMaxBBox(std::move(p_relMaxBBox)),
         timeRange(p_timeRange) {}
 
+  DirichletBC(Eigen::Vector3d p_relMinBBox, Eigen::Vector3d p_relMaxBBox,
+              double p_temperature,
+              const std::array<double, 2> &p_timeRange =
+                  {0.0, std::numeric_limits<double>::infinity()})
+      : relMinBBox(std::move(p_relMinBBox)),
+        relMaxBBox(std::move(p_relMaxBBox)), temperature(p_temperature),
+        timeRange(p_timeRange) {}        
+
   void calcAbsBBox(const Eigen::Vector3d &modelMinBBox, const Eigen::Vector3d &modelMaxBBox) {
     Eigen::Vector3d modelLength = modelMaxBBox - modelMinBBox;
     absMinBBox = modelMinBBox + (modelLength.array() * relMinBBox.array()).matrix();
@@ -35,6 +43,8 @@ struct DirichletBC {
 
   Eigen::Vector3d absMinBBox;
   Eigen::Vector3d absMaxBBox;
+  double temperature;
+
 };
 
 struct NeumannBC {
@@ -45,6 +55,13 @@ struct NeumannBC {
         relMaxBBox(std::move(p_relMaxBBox)),
         force(std::move(p_force)),
         timeRange(p_timeRange) {}
+  NeumannBC(Eigen::Vector3d p_relMinBBox, Eigen::Vector3d p_relMaxBBox,
+            double p_flux,
+            const std::array<double, 2> &p_timeRange =
+                {0.0, std::numeric_limits<double>::infinity()})
+      : relMinBBox(std::move(p_relMinBBox)),
+        relMaxBBox(std::move(p_relMaxBBox)), flux(p_flux),
+        timeRange(p_timeRange) {}        
 
   void calcAbsBBox(const Eigen::Vector3d &modelMinBBox, const Eigen::Vector3d &modelMaxBBox) {
     Eigen::Vector3d modelLength = modelMaxBBox - modelMinBBox;
@@ -69,6 +86,7 @@ struct NeumannBC {
   Eigen::Vector3d absMaxBBox;
 
   Eigen::Vector3d force;
+  double flux;
 };
 
 }  // namespace da::sha
